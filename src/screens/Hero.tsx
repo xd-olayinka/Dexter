@@ -1,5 +1,6 @@
 import type { Mode } from '../data'
 import operative from '../assets/img/operative.png'
+import heroOrch from '../assets/img/hero-orch.jpg'
 
 // Desktop Briefing hero — faithful rebuild of the Shadow Protocol
 // reference frame: split gradient/white bands, HUD-arc operative
@@ -48,8 +49,11 @@ export default function Hero({ mode }: { mode: Mode }) {
         <div className="hero-char">
           <div className="arc1" aria-hidden="true" />
           <div className="arc2" aria-hidden="true" />
-          <div className="op-card">
-            <img src={operative} alt="Dexter operative" />
+          <div className={`op-card${orch ? ' orch' : ''}`}>
+            <img
+              src={orch ? heroOrch : operative}
+              alt={orch ? 'Dexter · Orchestrator' : 'Dexter · Shadow operative'}
+            />
             <div className="tick tl" /><div className="tick tr" />
             <div className="tick bl" /><div className="tick br" />
             <div className="idstrip"><span>ID · 0071</span><span>SEC ●●●●</span></div>

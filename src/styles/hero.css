@@ -111,6 +111,10 @@
   background: #101013;
 }
 .op-card > img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 20%; display: block; }
+/* Orchestrator uses the cartoon mascot — light card, contain not cover */
+.op-card.orch { background: linear-gradient(180deg, #FFF6E8 0%, #F5E4C8 100%); }
+.op-card.orch > img { object-fit: contain; object-position: center 40%; padding: 24px 12px 90px; }
+.op-card.orch .idstrip { color: #7A4A18; }
 .op-card .tick { position: absolute; width: 14px; height: 14px; border-color: var(--gold); }
 .op-card .tick.tl { top: 12px; left: 12px; border-top: 1.5px solid; border-left: 1.5px solid; }
 .op-card .tick.tr { top: 12px; right: 12px; border-top: 1.5px solid; border-right: 1.5px solid; }
