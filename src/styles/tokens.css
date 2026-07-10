@@ -1,0 +1,110 @@
+/* ============================================================
+   Dexter Design System · v0.1 tokens
+   Two palettes, shared spine. Orchestrator = warm, planning.
+   Shadow = dark, executing. The .shadow class on the shell
+   flips every semantic token; components read only semantics.
+   ============================================================ */
+
+:root {
+  /* Orchestrator palette */
+  --orch-bg: #EFEBE4;
+  --orch-surface: #FFF6E8;
+  --orch-surface-2: #F5F1EA;
+  --orch-ink: #0B0B0C;
+  --orch-accent: #C7361F;
+  --orch-heat: #F78320;
+  --orch-gold: #F5C063;
+  --orch-good: #3D9B63;
+
+  /* Shadow palette */
+  --sh-bg: #0B0B0C;
+  --sh-surface: #16161A;
+  --sh-surface-2: #1F1F24;
+  --sh-ink: #FFF6E8;
+  --sh-gold: #F5C063;
+  --sh-red: #C7361F;
+  --sh-warn: #FF6B4F;
+  --sh-good: #8CFF8C;
+
+  /* Shared spine */
+  --cream: #FFF6E8;
+  --cream-soft: #FFE7C2;
+  --cream-faint: #FFF3D9;
+  --jet: #0B0B0C;
+  --gold: #F5C063;
+  --red: #C7361F;
+
+  /* Type */
+  --font-display: 'Poppins', sans-serif;
+  --font-ui: 'Satoshi', system-ui, sans-serif;
+
+  /* Radius: 8 chips · 14 inputs/badges · 18 stat cards · 22 mission cards · 28 hero/frame · pill CTAs */
+  --r-chip: 8px;
+  --r-input: 14px;
+  --r-stat: 18px;
+  --r-card: 22px;
+  --r-hero: 28px;
+  --r-frame: 32px;
+  --r-pill: 999px;
+
+  /* Elevation */
+  --elev-sm: 0 2px 6px -2px rgba(20, 10, 0, .12);
+  --elev-md: 0 12px 24px -12px rgba(20, 10, 0, .25);
+  --elev-lg: 0 20px 40px -22px rgba(20, 10, 0, .35);
+  --elev-hero: 0 40px 80px -30px rgba(20, 10, 0, .55);
+
+  /* Hero gradients */
+  --orch-hero-gradient: radial-gradient(120% 90% at 20% 35%, #FFC15A 0%, #F78320 38%, #D63A1F 78%, #7A1508 100%);
+  --sh-hero-gradient: radial-gradient(120% 90% at 20% 20%, rgba(199, 54, 31, .35) 0%, #0B0B0C 65%);
+
+  /* ---- Semantic tokens: Orchestrator default ---- */
+  --bg: var(--orch-bg);
+  --surface: var(--orch-surface);
+  --surface-2: var(--orch-surface-2);
+  --ink: var(--orch-ink);
+  --ink-inverse: var(--cream);
+  --dim: #8A8578;
+  --dim-2: #6B6558;
+  --body-dim: #4A463D;
+  --label: #6B5A3E;
+  --line: rgba(11, 11, 12, .08);
+  --line-strong: rgba(11, 11, 12, .12);
+  --accent: var(--orch-accent);
+  --heat: var(--orch-heat);
+  --good: var(--orch-good);
+  --warn: #B27A10;
+  --card-bg: var(--orch-surface);
+  --card-alt-bg: #FFFFFF;
+  --track: rgba(11, 11, 12, .08);
+  --fill: var(--orch-ink);
+  --hero-gradient: var(--orch-hero-gradient);
+  --hero-side: #FFFFFF;
+  --hero-side-ink: #0B0B0C;
+  --glow: none;
+}
+
+.shadow-mode {
+  --bg: var(--sh-bg);
+  --surface: var(--sh-surface);
+  --surface-2: var(--sh-surface-2);
+  --ink: var(--sh-ink);
+  --ink-inverse: var(--jet);
+  --dim: #A5A196;
+  --dim-2: #A5A196;
+  --body-dim: #A5A196;
+  --label: #A5A196;
+  --line: rgba(255, 255, 255, .08);
+  --line-strong: rgba(255, 255, 255, .14);
+  --accent: var(--sh-gold);
+  --heat: var(--sh-warn);
+  --good: var(--sh-good);
+  --warn: var(--sh-gold);
+  --card-bg: var(--sh-surface);
+  --card-alt-bg: var(--sh-surface-2);
+  --track: rgba(255, 255, 255, .08);
+  --fill: var(--sh-gold);
+  --hero-gradient: var(--sh-hero-gradient);
+  --hero-side: #111114;
+  --hero-side-ink: #FFF6E8;
+  --glow: 0 0 8px;
+}
