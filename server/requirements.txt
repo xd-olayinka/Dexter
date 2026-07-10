@@ -1,0 +1,27 @@
+# Core
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+websockets>=14.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+python-dotenv>=1.1.0
+httpx>=0.28.0
+
+# Ollama
+ollama>=0.5.0
+
+# Database
+psycopg[binary]>=3.2.0
+pgvector>=0.3.6
+
+# Voice (install when ready — Phase 3)
+# silero-vad
+# faster-whisper
+# piper-tts  (or: pip install piper-tts)
+
+# Browser automation (install when ready — Phase 2)
+# playwright
+
+# Dev
+pytest>=8.4.0
+pytest-asyncio>=1.0.0

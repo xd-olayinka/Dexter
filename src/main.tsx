@@ -4,6 +4,9 @@ import './styles/fonts.css'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/hero.css'
+import './styles/toast.css'
+import './styles/settings.css'
+import './styles/notifications.css'
 import App from './App'
 
 createRoot(document.getElementById('root')!).render(

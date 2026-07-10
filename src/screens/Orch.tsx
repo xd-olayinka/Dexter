@@ -1,10 +1,57 @@
 import { useState } from 'react'
 import { PROJECTS, TASKS_TODAY, TASKS_UPCOMING, TEAM, LOAD } from '../data'
 import heroOrch from '../assets/img/hero-orch.jpg'
+import { api } from '../lib/api'
+import { useBackend } from '../lib/backend'
+import { useToast } from '../lib/toast'
 
 export function OrchHome({ go, enterShadow }: { go: (tab: string) => void; enterShadow: () => void }) {
+  const { online } = useBackend()
+  const toast = useToast()
+  const [cmd, setCmd] = useState('')
+
+  function ask() {
+    const text = cmd.trim()
+    if (!text) return
+    sessionStorage.setItem('dexter.pendingMessage', text)
+    setCmd('')
+    go('chat')
+  }
+
+  async function delegate() {
+    const text = cmd.trim()
+    if (!text) return
+    if (!online) {
+      toast.push({ title: 'Backend offline', body: 'Start the server to delegate real tasks', kind: 'warn' })
+      return
+    }
+    try {
+      await api.delegate(text)
+      toast.push({ title: 'Delegated to Shadow', body: text, kind: 'good' })
+      setCmd('')
+    } catch {
+      toast.push({ title: 'Delegate failed', body: 'Shadow did not respond', kind: 'warn' })
+    }
+  }
+
   return (
     <div className="content" style={{ maxWidth: 560 }}>
+      <div className="label" style={{ marginBottom: 8 }}>COMMAND INPUT</div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="chatinput" style={{ paddingTop: 0 }}>
+          <input
+            type="text"
+            placeholder="Tell Dexter what you need…"
+            value={cmd}
+            onChange={(e) => setCmd(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') ask() }}
+          />
+          <button className="send" aria-label="Ask" onClick={ask}>↑</button>
+        </div>
+        <div className="pillrow" style={{ paddingTop: 8 }}>
+          <button className="p" onClick={delegate}>⬢ Delegate</button>
+        </div>
+      </div>
       <div className="eyebrow">Briefing · 06:47 Local</div>
       <h1 className="bigtitle">
         Good morning, <em>Commander</em>. <span className="hl">3 priorities</span>,{' '}

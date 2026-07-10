@@ -89,6 +89,27 @@ button { font-family: inherit; color: inherit; }
   .topnav .live .dot-live { width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 8px var(--red); }
 }
 
+/* topbar action cluster: bell · gear · protocol toggle */
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.iconbtn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(0, 0, 0, .07); border: none; cursor: pointer;
+  display: grid; place-items: center; font-size: 15px; color: inherit;
+  transition: background .25s, color .25s; position: relative; flex: none;
+}
+.shadow-mode .iconbtn { background: rgba(255, 255, 255, .07); }
+.iconbtn:hover, .iconbtn.on { background: var(--jet); color: var(--cream); }
+.shadow-mode .iconbtn:hover, .shadow-mode .iconbtn.on { background: var(--gold); color: var(--jet); }
+.iconbtn .count {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill);
+  background: var(--red); color: #fff; font-size: 9px; font-weight: 700;
+  display: grid; place-items: center; font-family: var(--font-ui);
+}
+.shadow-mode .iconbtn .count { box-shadow: 0 0 8px var(--red); }
+
+.topnav .live.off .dot-live { background: #8A8578; box-shadow: none; }
+
 .ptoggle {
   display: flex; background: rgba(0, 0, 0, .07); border-radius: var(--r-pill);
   padding: 3px; gap: 2px; transition: background .5s; flex: none;

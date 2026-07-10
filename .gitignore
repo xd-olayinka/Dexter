@@ -7,3 +7,10 @@ dist
 !.vscode/extensions.json
 .idea
 *.log
+
+# Python backend
+server/.venv/
+server/__pycache__/
+server/**/__pycache__/
+server/.env
+*.pyc

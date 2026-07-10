@@ -4,10 +4,17 @@ import Hero from './screens/Hero'
 import { OrchHome, Projects, Tasks, Team } from './screens/Orch'
 import { ShadowOps, Swarm, Selector, Credits } from './screens/Shadow'
 import Chat from './screens/Chat'
+import Settings from './screens/Settings'
+import NotificationBell from './components/NotificationBell'
+import GateWatcher from './components/GateWatcher'
+import { BackendProvider, useBackend } from './lib/backend'
+import { ToastProvider } from './lib/toast'
 
-export default function App() {
+function Shell() {
   const [mode, setMode] = useState<Mode>('orch')
   const [active, setActive] = useState<Record<Mode, string>>({ orch: 'home', shadow: 'ops' })
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const { online, checked } = useBackend()
   const tab = active[mode]
   const go = (t: string) => setActive((a) => ({ ...a, [mode]: t }))
   const isHome = tab === 'home' || tab === 'ops'
@@ -15,6 +22,7 @@ export default function App() {
   return (
     <div className={`shell${mode === 'shadow' ? ' shadow-mode' : ''}`}>
       <div className="headband" />
+      <GateWatcher />
 
       <header className="topbar">
         <div className="brand">
@@ -29,12 +37,26 @@ export default function App() {
           {TABS[mode].map(([id, , label]) => (
             <button key={id} className={id === tab ? 'on' : ''} onClick={() => go(id)}>{label}</button>
           ))}
-          <span className="live"><span className="dot-live" />Live</span>
+          <span className={`live${!online ? ' off' : ''}`} title={online ? 'Backend connected' : 'Backend offline — demo mode'}>
+            <span className="dot-live" />
+            {checked ? (online ? 'Live' : 'Demo') : '…'}
+          </span>
         </nav>
 
-        <div className="ptoggle">
-          <button className={mode === 'orch' ? 'on' : ''} onClick={() => setMode('orch')}>Orch</button>
-          <button className={mode === 'shadow' ? 'on' : ''} onClick={() => setMode('shadow')}>Shadow</button>
+        <div className="topbar-actions">
+          <NotificationBell />
+          <button
+            className={`iconbtn${settingsOpen ? ' on' : ''}`}
+            aria-label="Settings & connections"
+            title="Settings & connections"
+            onClick={() => setSettingsOpen((v) => !v)}
+          >
+            ⚙
+          </button>
+          <div className="ptoggle">
+            <button className={mode === 'orch' ? 'on' : ''} onClick={() => setMode('orch')}>Orch</button>
+            <button className={mode === 'shadow' ? 'on' : ''} onClick={() => setMode('shadow')}>Shadow</button>
+          </div>
         </div>
       </header>
 
@@ -65,6 +87,8 @@ export default function App() {
         </div>
       </main>
 
+      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
       <nav className="tabbar">
         {TABS[mode].map(([id, glyph, label]) => (
           <button key={id} className={`tab${id === tab ? ' on' : ''}`} onClick={() => go(id)}>
@@ -74,5 +98,15 @@ export default function App() {
         ))}
       </nav>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <BackendProvider>
+      <ToastProvider>
+        <Shell />
+      </ToastProvider>
+    </BackendProvider>
   )
 }
