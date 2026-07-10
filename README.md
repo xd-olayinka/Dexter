@@ -28,4 +28,4 @@ npm run dev       # http://localhost:5173/Dexter/
 npm run build
 ```
 
-Live: https://xd-olayinka.github.io/Dexter/
+Live: https://olayinka-david.github.io/Dexter/
