@@ -1,0 +1,656 @@
+<title>Dexter · Setup Checklist</title>
+<style>
+  @font-face {
+    font-family: 'Checklist Display';
+    src: local('SF Pro Display'), local('Segoe UI'), local('system-ui');
+    font-weight: 100 900;
+  }
+
+  :root {
+    --ground: #0E0E10;
+    --surface: #18181C;
+    --surface-raised: #222228;
+    --ink: #E4E3E0;
+    --ink-muted: #8A897F;
+    --accent: #F5C063;
+    --accent-dim: #F5C06320;
+    --success: #4ADE80;
+    --success-dim: #4ADE8018;
+    --danger: #F87171;
+    --border: #2A2A30;
+    --radius: 10px;
+  }
+
+  :root[data-theme="light"] {
+    --ground: #F3F1EC;
+    --surface: #FFFFFF;
+    --surface-raised: #F7F5F0;
+    --ink: #1A1A1A;
+    --ink-muted: #7A7868;
+    --accent: #B8842A;
+    --accent-dim: #B8842A12;
+    --success: #16A34A;
+    --success-dim: #16A34A10;
+    --danger: #DC2626;
+    --border: #E0DDD4;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground: #F3F1EC;
+      --surface: #FFFFFF;
+      --surface-raised: #F7F5F0;
+      --ink: #1A1A1A;
+      --ink-muted: #7A7868;
+      --accent: #B8842A;
+      --accent-dim: #B8842A12;
+      --success: #16A34A;
+      --success-dim: #16A34A10;
+      --danger: #DC2626;
+      --border: #E0DDD4;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  .header {
+    margin-bottom: 40px;
+  }
+
+  .header .eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+
+  .header .sub {
+    color: var(--ink-muted);
+    font-size: 14px;
+    max-width: 560px;
+  }
+
+  .status-strip {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 24px 0 40px;
+  }
+
+  .status-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .status-chip .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+
+  .status-chip.pending .dot { background: var(--accent); }
+  .status-chip.blocked .dot { background: var(--danger); }
+
+  .phase {
+    margin-bottom: 36px;
+  }
+
+  .phase-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .phase-num {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    min-width: 56px;
+  }
+
+  .phase-title {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .phase-tag {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+  }
+
+  .phase-tag.done {
+    background: var(--success-dim);
+    color: var(--success);
+  }
+
+  .phase-tag.ready {
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  .phase-tag.needs {
+    color: var(--ink-muted);
+    border: 1px solid var(--border);
+    background: transparent;
+  }
+
+  .task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .task {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+
+  .task:hover {
+    background: var(--surface-raised);
+  }
+
+  .task .check {
+    width: 18px; height: 18px;
+    border-radius: 5px;
+    border: 1.5px solid var(--border);
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: transparent;
+    font-size: 11px;
+    color: transparent;
+    line-height: 1;
+  }
+
+  .task.completed .check {
+    background: var(--success);
+    border-color: var(--success);
+    color: #fff;
+  }
+
+  .task .info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .task .label {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .task.completed .label {
+    text-decoration: line-through;
+    opacity: 0.5;
+  }
+
+  .task .detail {
+    font-size: 12.5px;
+    color: var(--ink-muted);
+    margin-top: 2px;
+    line-height: 1.4;
+  }
+
+  .task .badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .badge.code { background: var(--success-dim); color: var(--success); }
+  .badge.install { background: var(--accent-dim); color: var(--accent); }
+  .badge.paid { background: #F8717118; color: var(--danger); }
+  .badge.optional { color: var(--ink-muted); border: 1px solid var(--border); }
+
+  .separator {
+    margin: 48px 0 36px;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin-bottom: 20px;
+  }
+
+  .file-tree {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    overflow-x: auto;
+    color: var(--ink-muted);
+  }
+
+  .file-tree .dir { color: var(--accent); font-weight: 600; }
+  .file-tree .file { color: var(--ink); }
+  .file-tree .new { color: var(--success); }
+  .file-tree .comment { color: var(--ink-muted); font-style: italic; }
+
+  .footer-note {
+    margin-top: 48px;
+    padding: 16px 20px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent)30;
+    border-radius: var(--radius);
+    font-size: 13px;
+    color: var(--ink-muted);
+    line-height: 1.5;
+  }
+
+  .footer-note strong { color: var(--ink); }
+
+  @media (max-width: 600px) {
+    .page { padding: 32px 16px 60px; }
+    .header h1 { font-size: 22px; }
+    .status-strip { gap: 8px; }
+    .phase-head { flex-wrap: wrap; gap: 8px; }
+    .phase-tag { margin-left: 0; }
+    .task { flex-wrap: wrap; }
+    .task .badge { margin-left: auto; }
+  }
+</style>
+
+<div class="page">
+  <div class="header">
+    <div class="eyebrow">D.E.X.T.E.R · Build Topology</div>
+    <h1>Your Setup Checklist</h1>
+    <div class="sub">Everything the code needs to actually run. All 2,810 lines of backend are written — these are the external services and local installs they depend on.</div>
+  </div>
+
+  <div class="status-strip">
+    <div class="status-chip"><span class="dot"></span>Code complete — 6 phases, 38 files</div>
+    <div class="status-chip pending"><span class="dot"></span>External deps — install tomorrow</div>
+    <div class="status-chip blocked"><span class="dot"></span>Paid services — when ready</div>
+  </div>
+
+  <!-- PHASE 0 -->
+  <div class="phase">
+    <div class="phase-head">
+      <span class="phase-num">PHASE 0</span>
+      <span class="phase-title">Text In, Text Out</span>
+      <span class="phase-tag ready">Your setup</span>
+    </div>
+    <div class="task-list">
+      <div class="task completed">
+        <div class="check">&#10003;</div>
+        <div class="info">
+          <div class="label">FastAPI server, WebSocket chat, Ollama client</div>
+          <div class="detail">main.py, chat.py, ollama_client.py, run.py</div>
+        </div>
+        <span class="badge code">Code done</span>
+      </div>
+      <div class="task completed">
+        <div class="check">&#10003;</div>
+        <div class="info">
+          <div class="label">Python venv + core pip packages</div>
+          <div class="detail">server/.venv/ — fastapi, uvicorn, httpx, ollama, pydantic, etc.</div>
+        </div>
+        <span class="badge code">Code done</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Install Ollama</div>
+          <div class="detail">Download from ollama.com → install → restart terminal</div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Pull your primary model</div>
+          <div class="detail"><code>ollama pull qwen2.5:32b</code> — or <code>qwen2.5:7b</code> if RAM is tight. Also <code>ollama pull nomic-embed-text</code> for embeddings and <code>ollama pull llama3.2:3b</code> for fast turns.</div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Copy .env.example → .env</div>
+          <div class="detail">In <code>server/</code> — adjust <code>DEXTER_OLLAMA_MODEL</code> to match whichever model you pulled</div>
+        </div>
+        <span class="badge install">Config</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Test it runs</div>
+          <div class="detail"><code>cd server && .venv\Scripts\python run.py</code> → hit <code>http://localhost:8000</code> → should return <code>{"status":"ok"}</code></div>
+        </div>
+        <span class="badge install">Verify</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 1 -->
+  <div class="phase">
+    <div class="phase-head">
+      <span class="phase-num">PHASE 1</span>
+      <span class="phase-title">Real Memory</span>
+      <span class="phase-tag ready">Your setup</span>
+    </div>
+    <div class="task-list">
+      <div class="task completed">
+        <div class="check">&#10003;</div>
+        <div class="info">
+          <div class="label">Conversation store, semantic recall, fact store, schema</div>
+          <div class="detail">memory/store.py, memory/semantic.py, memory/facts.py, db/schema.sql, db/connection.py</div>
+        </div>
+        <span class="badge code">Code done</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Install PostgreSQL</div>
+          <div class="detail">Download from postgresql.org → install (remember the password you set for the postgres user)</div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Enable pgvector extension</div>
+          <div class="detail">
+            Windows: download pgvector from github.com/pgvector/pgvector → build or use prebuilt binaries.<br>
+            Then in psql: <code>CREATE EXTENSION vector;</code>
+          </div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Create the Dexter database + user</div>
+          <div class="detail">
+            <code>psql -U postgres</code> → <code>CREATE USER dexter WITH PASSWORD 'dexter';</code> → <code>CREATE DATABASE dexter OWNER dexter;</code> → <code>\c dexter</code> → <code>CREATE EXTENSION vector;</code>
+          </div>
+        </div>
+        <span class="badge install">Config</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Run the schema</div>
+          <div class="detail"><code>psql -U dexter -d dexter -f server/db/schema.sql</code> — or it auto-runs on server startup via <code>init_db()</code></div>
+        </div>
+        <span class="badge install">Verify</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 2 -->
+  <div class="phase">
+    <div class="phase-head">
+      <span class="phase-num">PHASE 2</span>
+      <span class="phase-title">Tools + Function Calling</span>
+      <span class="phase-tag ready">Your setup</span>
+    </div>
+    <div class="task-list">
+      <div class="task completed">
+        <div class="check">&#10003;</div>
+        <div class="info">
+          <div class="label">Tool registry, agentic loop, 7 built-in tools</div>
+          <div class="detail">tools/registry.py, tools/caller.py, search.py, filesystem.py, browser.py, datetime_tool.py</div>
+        </div>
+        <span class="badge code">Code done</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Install Docker Desktop (for SearXNG)</div>
+          <div class="detail">Download from docker.com → install → enable WSL 2 backend</div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Run SearXNG</div>
+          <div class="detail"><code>docker run -d -p 8888:8080 searxng/searxng</code> — web search will Just Work after this</div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Install Playwright (optional — for browse_url tool)</div>
+          <div class="detail"><code>.venv\Scripts\pip install playwright && .venv\Scripts\playwright install chromium</code></div>
+        </div>
+        <span class="badge optional">Optional</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 3 -->
+  <div class="phase">
+    <div class="phase-head">
+      <span class="phase-num">PHASE 3</span>
+      <span class="phase-title">Voice Pipeline</span>
+      <span class="phase-tag needs">Needs libs</span>
+    </div>
+    <div class="task-list">
+      <div class="task completed">
+        <div class="check">&#10003;</div>
+        <div class="info">
+          <div class="label">VAD, STT, TTS, pipeline, WebSocket handler</div>
+          <div class="detail">voice/vad.py, stt.py, tts.py, pipeline.py, ws_handler.py — all with dummy fallbacks</div>
+        </div>
+        <span class="badge code">Code done</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Install PyTorch (for Silero VAD)</div>
+          <div class="detail"><code>.venv\Scripts\pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu</code> — CPU-only is fine for VAD</div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Install faster-whisper (STT)</div>
+          <div class="detail"><code>.venv\Scripts\pip install faster-whisper</code> — first run downloads the whisper model (~150MB for "base")</div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Install Piper TTS</div>
+          <div class="detail"><code>.venv\Scripts\pip install piper-tts</code> — voice models download on first use. Two voices needed: one warm (Orch), one cold (Shadow).</div>
+        </div>
+        <span class="badge install">Install</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 4 -->
+  <div class="phase">
+    <div class="phase-head">
+      <span class="phase-num">PHASE 4</span>
+      <span class="phase-title">Shadow Executor Layer</span>
+      <span class="phase-tag done">Ready to go</span>
+    </div>
+    <div class="task-list">
+      <div class="task completed">
+        <div class="check">&#10003;</div>
+        <div class="info">
+          <div class="label">Executor manager, budget tracker, guard rules, approval gates</div>
+          <div class="detail">shadow/executor.py, budget.py, guards.py, gates.py, router.py — 8 API endpoints</div>
+        </div>
+        <span class="badge code">Code done</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Set up ntfy.sh notifications (optional)</div>
+          <div class="detail">Free: just set <code>DEXTER_NTFY_TOPIC</code> in .env to any unique string, install the ntfy app on your phone, and subscribe to that topic. No account needed.</div>
+        </div>
+        <span class="badge optional">Optional</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 5 -->
+  <div class="phase">
+    <div class="phase-head">
+      <span class="phase-num">PHASE 5</span>
+      <span class="phase-title">Escalation Routing</span>
+      <span class="phase-tag needs">Needs API keys</span>
+    </div>
+    <div class="task-list">
+      <div class="task completed">
+        <div class="check">&#10003;</div>
+        <div class="info">
+          <div class="label">Task classifier, 3 cloud providers, model router, spend tracker</div>
+          <div class="detail">escalation/classifier.py, providers.py, router.py, tracker.py, api.py — 4 API endpoints</div>
+        </div>
+        <span class="badge code">Code done</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Anthropic API key (when ready to escalate)</div>
+          <div class="detail">console.anthropic.com → API Keys → set <code>DEXTER_ANTHROPIC_API_KEY</code> in .env. ~$3/$15 per M tokens for Sonnet.</div>
+        </div>
+        <span class="badge paid">Paid</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">OpenAI API key (optional backup)</div>
+          <div class="detail">platform.openai.com → API Keys → set <code>DEXTER_OPENAI_API_KEY</code>. Not needed if Anthropic is your primary.</div>
+        </div>
+        <span class="badge paid">Paid</span>
+      </div>
+      <div class="task">
+        <div class="check"></div>
+        <div class="info">
+          <div class="label">Groq API key (free fast tier)</div>
+          <div class="detail">console.groq.com → set <code>DEXTER_GROQ_API_KEY</code>. Free tier, 30 RPM. Good for fast/simple turns.</div>
+        </div>
+        <span class="badge optional">Free tier</span>
+      </div>
+    </div>
+  </div>
+
+  <hr class="separator">
+
+  <div class="section-label">What was built</div>
+
+  <div class="file-tree">
+<span class="dir">server/</span>
+├── <span class="file">main.py</span>          <span class="comment">← FastAPI app, all routers wired</span>
+├── <span class="file">chat.py</span>          <span class="comment">← REST + WebSocket chat</span>
+├── <span class="file">ollama_client.py</span> <span class="comment">← async Ollama wrapper</span>
+├── <span class="file">config.py</span>        <span class="comment">← pydantic-settings, reads .env</span>
+├── <span class="file">models.py</span>        <span class="comment">← shared types (Message, Task, etc.)</span>
+├── <span class="file">run.py</span>           <span class="comment">← uvicorn entry point</span>
+├── <span class="file">requirements.txt</span>
+├── <span class="file">.env.example</span>
+│
+├── <span class="dir">db/</span>
+│   ├── <span class="new">schema.sql</span>     <span class="comment">← Postgres + pgvector DDL</span>
+│   └── <span class="new">connection.py</span>  <span class="comment">← async pool, graceful fallback</span>
+│
+├── <span class="dir">memory/</span>
+│   ├── <span class="new">store.py</span>       <span class="comment">← conversation persistence</span>
+│   ├── <span class="new">semantic.py</span>    <span class="comment">← vector recall (768d cosine)</span>
+│   └── <span class="new">facts.py</span>       <span class="comment">← structured fact upsert/query</span>
+│
+├── <span class="dir">tools/</span>
+│   ├── <span class="new">registry.py</span>    <span class="comment">← tool registry + schema gen</span>
+│   ├── <span class="new">caller.py</span>      <span class="comment">← agentic function-calling loop</span>
+│   ├── <span class="new">search.py</span>      <span class="comment">← SearXNG web search</span>
+│   ├── <span class="new">filesystem.py</span>  <span class="comment">← read/write/list with path safety</span>
+│   ├── <span class="new">browser.py</span>     <span class="comment">← Playwright URL scraper</span>
+│   └── <span class="new">datetime_tool.py</span>
+│
+├── <span class="dir">voice/</span>
+│   ├── <span class="new">vad.py</span>         <span class="comment">← Silero VAD (+ dummy fallback)</span>
+│   ├── <span class="new">stt.py</span>         <span class="comment">← faster-whisper / whisper</span>
+│   ├── <span class="new">tts.py</span>         <span class="comment">← Piper TTS, dual voice profiles</span>
+│   ├── <span class="new">pipeline.py</span>    <span class="comment">← full audio pipeline coordination</span>
+│   └── <span class="new">ws_handler.py</span>  <span class="comment">← /ws/voice WebSocket</span>
+│
+├── <span class="dir">shadow/</span>
+│   ├── <span class="new">executor.py</span>    <span class="comment">← asyncio-based task executor</span>
+│   ├── <span class="new">budget.py</span>      <span class="comment">← per-task + daily spend tracking</span>
+│   ├── <span class="new">guards.py</span>      <span class="comment">← composable guard rules</span>
+│   ├── <span class="new">gates.py</span>       <span class="comment">← approval gates + ntfy.sh push</span>
+│   └── <span class="new">router.py</span>      <span class="comment">← /api/shadow endpoints</span>
+│
+└── <span class="dir">escalation/</span>
+    ├── <span class="new">classifier.py</span>  <span class="comment">← heuristic task complexity</span>
+    ├── <span class="new">providers.py</span>   <span class="comment">← Anthropic/OpenAI/Groq (raw httpx)</span>
+    ├── <span class="new">router.py</span>      <span class="comment">← model routing + budget check</span>
+    ├── <span class="new">tracker.py</span>     <span class="comment">← spend ledger</span>
+    └── <span class="new">api.py</span>         <span class="comment">← /api/escalation endpoints</span>
+  </div>
+
+  <div class="footer-note">
+    <strong>Minimum to get chatting:</strong> Install Ollama + pull one model + copy .env → that's Phase 0 working. Everything else layers on top at your pace. The server starts cleanly even with nothing else installed — all missing services get stub responses instead of crashes.
+  </div>
+</div>
