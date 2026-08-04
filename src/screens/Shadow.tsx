@@ -53,7 +53,7 @@ export function ShadowOps() {
       setCmd('')
       loadTasks()
     } catch {
-      toast.push({ title: 'Spawn failed', body: 'Shadow did not respond', kind: 'warn' })
+      toast.push({ title: 'Spawn failed', body: 'Anthony did not respond', kind: 'warn' })
     }
   }
 
@@ -63,7 +63,7 @@ export function ShadowOps() {
       await refreshGates()
       toast.push({ title: 'Gate approved', kind: 'good' })
     } catch {
-      toast.push({ title: 'Approve failed', body: 'Could not reach Shadow', kind: 'warn' })
+      toast.push({ title: 'Approve failed', body: 'Could not reach Anthony', kind: 'warn' })
     }
   }
 
@@ -73,7 +73,7 @@ export function ShadowOps() {
       await refreshGates()
       toast.push({ title: 'Gate rejected', kind: 'info' })
     } catch {
-      toast.push({ title: 'Reject failed', body: 'Could not reach Shadow', kind: 'warn' })
+      toast.push({ title: 'Reject failed', body: 'Could not reach Anthony', kind: 'warn' })
     }
   }
 
@@ -83,7 +83,7 @@ export function ShadowOps() {
       toast.push({ title: 'Task killed', kind: 'good' })
       loadTasks()
     } catch {
-      toast.push({ title: 'Kill failed', body: 'Could not reach Shadow', kind: 'warn' })
+      toast.push({ title: 'Kill failed', body: 'Could not reach Anthony', kind: 'warn' })
     }
   }
 
@@ -94,12 +94,12 @@ export function ShadowOps() {
 
   return (
     <div className="content" style={{ maxWidth: 560 }}>
-      <div className="label" style={{ marginBottom: 8 }}>SHADOW COMMAND</div>
+      <div className="label" style={{ marginBottom: 8 }}>ANTHONY COMMAND</div>
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="chatinput" style={{ paddingTop: 0 }}>
           <input
             type="text"
-            placeholder="Order the Shadow…"
+            placeholder="Order Anthony…"
             value={cmd}
             onChange={(e) => setCmd(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') spawn() }}
@@ -111,7 +111,7 @@ export function ShadowOps() {
       </div>
       <div className="eyebrow">Ops Feed · Encrypted</div>
       <h1 className="bigtitle">
-        The <em>Shadow</em> ran all night. <span className="hl">5 executors</span>,{' '}
+        <em>Anthony</em> ran all night. <span className="hl">5 executors</span>,{' '}
         <span className="hl">1 guard trip</span>, zero escalations.
       </h1>
       <div className="chiprow">
@@ -124,8 +124,8 @@ export function ShadowOps() {
         <img src={operative} alt="Dexter" />
         <div className="tick tl" /><div className="tick tr" />
         <div className="plate">
-          <div><div className="sub">Operative</div><div className="nm">D.E.X.T.E.R</div></div>
-          <div className="mode">Shadow Protocol<br />Active</div>
+          <div><div className="sub">Operative</div><div className="nm">A.N.T.H.O.N.Y</div></div>
+          <div className="mode">Shadow Ops<br />Active</div>
         </div>
       </div>
       <div className="card">
@@ -208,7 +208,7 @@ export function Swarm() {
   return (
     <div className="content">
       <h1 className="bigtitle">Executor Swarm</h1>
-      <p className="subnote lead">Sub-agents Shadow created. Efficiency scores decide who survives.</p>
+      <p className="subnote lead">Sub-agents Anthony created. Efficiency scores decide who survives.</p>
       <div className="swarm">
         {SWARM.map(([id, nm, st, eff, work, cost]) => (
           <div key={id} className="unit">

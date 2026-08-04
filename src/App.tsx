@@ -28,8 +28,8 @@ function Shell() {
         <div className="brand">
           <div className="orb"><i /></div>
           <div className="t">
-            D.E.X.T.E.R
-            <small>{mode === 'orch' ? 'Orchestrator · v1.0' : 'Shadow Protocol · v1.0'}</small>
+            {mode === 'orch' ? 'D.E.X.T.E.R' : 'A.N.T.H.O.N.Y'}
+            <small>{mode === 'orch' ? 'Orchestrator · v1.0' : 'Shadow Ops · v1.0'}</small>
           </div>
         </div>
 
@@ -54,8 +54,8 @@ function Shell() {
             ⚙
           </button>
           <div className="ptoggle">
-            <button className={mode === 'orch' ? 'on' : ''} onClick={() => setMode('orch')}>Orch</button>
-            <button className={mode === 'shadow' ? 'on' : ''} onClick={() => setMode('shadow')}>Shadow</button>
+            <button className={mode === 'orch' ? 'on' : ''} onClick={() => setMode('orch')}>Dexter</button>
+            <button className={mode === 'shadow' ? 'on' : ''} onClick={() => setMode('shadow')}>Anthony</button>
           </div>
         </div>
       </header>

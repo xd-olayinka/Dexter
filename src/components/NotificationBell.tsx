@@ -104,7 +104,7 @@ export default function NotificationBell() {
             {online && count === 0 && (
               <div className="notif-empty">
                 <span className="notif-empty-glyph">◈</span>
-                No gates pending. The Shadow runs clean.
+                No gates pending. Anthony runs clean.
               </div>
             )}
 

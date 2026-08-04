@@ -26,9 +26,9 @@ export default function Hero({ mode }: { mode: Mode }) {
           </div>
 
           {orch ? (
-            <h1 className="hero-h1">Command<br />the <em>Shadow</em>.<br />Own the Day.</h1>
+            <h1 className="hero-h1">Command<br /><em>Anthony</em>.<br />Own the Day.</h1>
           ) : (
-            <h1 className="hero-h1">The <em>Shadow</em><br />ran all<br />night.</h1>
+            <h1 className="hero-h1"><em>Anthony</em><br />ran all<br />night.</h1>
           )}
 
           <p className="hero-sub">
@@ -52,7 +52,7 @@ export default function Hero({ mode }: { mode: Mode }) {
           <div className={`op-card${orch ? ' orch' : ''}`}>
             <img
               src={orch ? heroOrch : operative}
-              alt={orch ? 'Dexter · Orchestrator' : 'Dexter · Shadow operative'}
+              alt={orch ? 'Dexter · Orchestrator' : 'Anthony · Shadow operative'}
             />
             <div className="tick tl" /><div className="tick tr" />
             <div className="tick bl" /><div className="tick br" />
@@ -60,11 +60,11 @@ export default function Hero({ mode }: { mode: Mode }) {
             <div className="plate">
               <div>
                 <div className="sub">Operative</div>
-                <div className="nm">D.E.X.T.E.R</div>
+                <div className="nm">{orch ? 'D.E.X.T.E.R' : 'A.N.T.H.O.N.Y'}</div>
               </div>
               <div className="proto">
                 {orch ? (<><div>ORCH</div><div className="red">ONLINE</div></>)
-                  : (<><div>SHADOW</div><div className="red">PROTOCOL</div></>)}
+                  : (<><div>ANTHONY</div><div className="red">ONLINE</div></>)}
               </div>
             </div>
           </div>
@@ -143,7 +143,7 @@ export default function Hero({ mode }: { mode: Mode }) {
         </div>
       </div>
 
-      <div className="hero-corner">D.E.X.T.E.R · v0.1 · // {orch ? 'operative standing by' : 'shadow protocol active'}</div>
+      <div className="hero-corner">{orch ? 'D.E.X.T.E.R' : 'A.N.T.H.O.N.Y'} · v0.1 · // {orch ? 'operative standing by' : 'anthony online'}</div>
       <div className="hero-marker">
         <div>OP · 24/7</div>
         <div className="enc">● Encrypted</div>

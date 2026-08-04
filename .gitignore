@@ -14,3 +14,6 @@ server/__pycache__/
 server/**/__pycache__/
 server/.env
 *.pyc
+
+# Generated handoff bundle (regenerate from docs/)
+Dexter-Anthony-Handoff.zip

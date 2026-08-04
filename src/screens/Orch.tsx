@@ -27,10 +27,10 @@ export function OrchHome({ go, enterShadow }: { go: (tab: string) => void; enter
     }
     try {
       await api.delegate(text)
-      toast.push({ title: 'Delegated to Shadow', body: text, kind: 'good' })
+      toast.push({ title: 'Delegated to Anthony', body: text, kind: 'good' })
       setCmd('')
     } catch {
-      toast.push({ title: 'Delegate failed', body: 'Shadow did not respond', kind: 'warn' })
+      toast.push({ title: 'Delegate failed', body: 'Anthony did not respond', kind: 'warn' })
     }
   }
 
@@ -73,11 +73,11 @@ export function OrchHome({ go, enterShadow }: { go: (tab: string) => void; enter
       <div className="card tint">
         <div className="cardhead"><span className="label">Today's Focus</span><button className="more" onClick={() => go('tasks')}>Tasks →</button></div>
         <div className="row"><div className="ic">◎</div><div className="body"><div className="nm">Close Meridian deal <span className="badge red">Rev Op</span></div><div className="meta">Terms drafted, review at 09:00 · Marcus + you</div></div></div>
-        <div className="row"><div className="ic">▤</div><div className="body"><div className="nm">Q3 pipeline audit <span className="badge grn">62%</span></div><div className="meta">Delegated to Shadow, Lena reviewing output</div></div></div>
+        <div className="row"><div className="ic">▤</div><div className="body"><div className="nm">Q3 pipeline audit <span className="badge grn">62%</span></div><div className="meta">Delegated to Anthony, Lena reviewing output</div></div></div>
         <div className="row"><div className="ic">✎</div><div className="body"><div className="nm">Landing page copy <span className="badge ylw">Blocked</span></div><div className="meta">Waiting on brand assets from Rina</div></div></div>
       </div>
       <div className="card dark">
-        <div className="cardhead"><span className="label">Shadow Report · Overnight</span><button className="more" style={{ color: '#F5C063' }} onClick={enterShadow}>Enter →</button></div>
+        <div className="cardhead"><span className="label">Anthony Report · Overnight</span><button className="more" style={{ color: '#F5C063' }} onClick={enterShadow}>Enter →</button></div>
         <div className="row"><div className="ic">⬢</div><div className="body"><div className="nm" style={{ color: '#FFF6E8' }}>5 executors ran, 1 guard trip</div><div className="meta">1,284 tasks total · zero escalations · $14.20 burned</div></div></div>
       </div>
     </div>
@@ -133,7 +133,7 @@ function TaskRow({ t }: { t: TaskItem }) {
       {t.tag && (t.tag[0].startsWith('badge')
         ? <span className={t.tag[0]}>{t.tag[1]}</span>
         : <button className={`del${delegated ? ' sent' : ''}`} onClick={() => setDelegated(true)}>
-            {delegated ? '⬢ Shadow' : t.tag[1]}
+            {delegated ? '⬢ Anthony' : t.tag[1]}
           </button>)}
     </div>
   )
@@ -143,7 +143,7 @@ export function Tasks() {
   return (
     <div className="content" style={{ maxWidth: 760 }}>
       <h1 className="bigtitle">Tasks</h1>
-      <p className="subnote lead">Assign to a person, or hand it to Shadow and Dexter picks the executor.</p>
+      <p className="subnote lead">Assign to a person, or hand it to Anthony and Dexter picks the executor.</p>
       <div className="card">
         <div className="cardhead"><span className="label">Today · 5</span><button className="more">+ Add</button></div>
         {TASKS_TODAY.map((t) => <TaskRow key={t.nm} t={t as TaskItem} />)}

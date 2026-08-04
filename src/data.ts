@@ -34,7 +34,7 @@ export const PROJECTS = [
   {
     mark: 'Q', name: 'Q3 Pipeline Audit', cat: 'Finance · Ledger&Co', badge: ['grn', 'On Track'],
     dark: false, due: 'Jul 20', status: '62%', statusCls: 'warn', tasks: '5 / 8',
-    people: ['LN', 'AK'], plus: false, agents: '3 agents', agentsNote: 'via Shadow',
+    people: ['LN', 'AK'], plus: false, agents: '3 agents', agentsNote: 'via Anthony',
   },
   {
     mark: 'B', name: 'Brand Refresh', cat: 'Design · Northwind Studio', badge: ['', 'Low'],
@@ -45,9 +45,9 @@ export const PROJECTS = [
 
 export const TASKS_TODAY = [
   { nm: 'Review Meridian terms draft', meta: 'Meridian Deal · You · 09:00', tag: ['badge red', 'High'] },
-  { nm: 'Approve 4 investor follow-ups', meta: 'Meridian Deal · staged by Dexter', tag: ['sent', '⬢ Shadow'] },
+  { nm: 'Approve 4 investor follow-ups', meta: 'Meridian Deal · staged by Dexter', tag: ['sent', '⬢ Anthony'] },
   { nm: 'Send brand assets to copy team', meta: 'Website Rebuild · Rina S.', tag: ['badge ylw', 'Blocked'] },
-  { nm: 'Normalize Q3 expense records', meta: 'Pipeline Audit · running overnight', tag: ['sent', '⬢ Shadow'] },
+  { nm: 'Normalize Q3 expense records', meta: 'Pipeline Audit · running overnight', tag: ['sent', '⬢ Anthony'] },
   { nm: 'Book supplier call', meta: 'Ops · unassigned', tag: ['del', 'Delegate'] },
 ]
 
@@ -128,10 +128,10 @@ export const CHAT_SEED: Record<Mode, { voice: string; m1: string; me: string; m2
     m1: "Morning, Commander. Meridian terms are drafted, the audit hit 62% overnight, and Rina's blocker is the only thing threatening this week. Want me to nudge the asset handoff?",
     me: 'Nudge it, and show me the terms at 9.',
     m2: 'Done. Reminder set, nudge sent softly through Slack. Terms will be on your screen at 09:00 sharp.',
-    pills: ['✓ Approve all', 'View terms', 'Delegate to Shadow', 'Hold'],
+    pills: ['✓ Approve all', 'View terms', 'Delegate to Anthony', 'Hold'],
   },
   shadow: {
-    voice: 'Shadow',
+    voice: 'Anthony',
     m1: 'Overnight run complete. 1,284 tasks terminated, one voice executor killed on budget guard. Two gates await your word.',
     me: 'Approve the mailer, deny the respawn.',
     m2: 'Executed. 4 follow-ups releasing now at $0.40 est. Voice respawn denied, cap holds at $50. Log updated.',

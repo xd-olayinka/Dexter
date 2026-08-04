@@ -1,13 +1,14 @@
-# D.E.X.T.E.R · Shadow Protocol
+# D.E.X.T.E.R + A.N.T.H.O.N.Y
 
-> **D**elegator · **E**xecutor · **X**D Task Terminator · **E**nabling **R**evenue
+> **DEXTER** — **D**elegator · **E**xecutor · **X**D Task Terminator · **E**nabling **R**evenue
+> **ANTHONY** — **A**utonomous **N**etworked **T**actical **H**andler for **O**perations, **N**otifications & **Y**ield
 
-A personal AI Shadow Operative that runs a business owner's operations across two linked protocols:
+A personal AI operative that runs a business owner's operations through two linked protocols, each with its own named agent:
 
-- **Orchestrator** — the visible layer. Talks to the Commander, plans work, routes reasoning to frontier models.
-- **Shadow** — the dark ops layer. Spawns executor sub-agents, scores them for efficiency, executes autonomously.
+- **DEXTER · Orchestrator** — the visible layer. Talks to the Commander, plans work, routes reasoning to frontier models.
+- **ANTHONY · Shadow** — the dark ops layer. Spawns executor sub-agents, scores them for efficiency, executes autonomously within guardrails, and reports back.
 
-One app, one identity, two faces. Toggle between them any time.
+One app, two operatives, two faces. Toggle between them any time.
 
 ## Status
 

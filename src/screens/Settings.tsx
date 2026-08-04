@@ -244,7 +244,7 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
             <div className="archive-title">Personal Intelligence Vault</div>
             <p className="subnote">
               Drop PDFs, links and notes into notebooks. Chat over your sources with citations, and generate
-              two-voice audio briefings using Dexter and Shadow. Built on the same Postgres + pgvector memory
+              two-voice audio briefings using Dexter and Anthony. Built on the same Postgres + pgvector memory
               the backend already runs — no subscription.
             </p>
           </div>
