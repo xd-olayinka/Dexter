@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     groq_api_key: str = ""
 
+    # DeepSeek — primary intelligence layer when Ollama isn't running
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    deepseek_reasoner_model: str = "deepseek-reasoner"
+    # auto = Ollama if healthy, else DeepSeek if key set, else stub
+    primary_provider: str = "auto"  # auto | ollama | deepseek
+
     # Budget
     daily_cloud_budget: float = 5.00
     per_task_budget_default: float = 0.50

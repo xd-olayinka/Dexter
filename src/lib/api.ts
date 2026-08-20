@@ -43,6 +43,7 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = 4000): P
 
 export interface SystemStatus {
   backend: { ok: boolean; version: string }
+  brain: { provider: string; model: string; ready: boolean }
   ollama: { ok: boolean; url: string; model: string; models: string[] }
   database: { ok: boolean; url: string }
   searxng: { ok: boolean; url: string }

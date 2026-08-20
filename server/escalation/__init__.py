@@ -1,5 +1,5 @@
 from escalation.classifier import TaskClassifier
-from escalation.providers import AnthropicProvider, OpenAIProvider, GroqProvider, LLMProvider
+from escalation.providers import AnthropicProvider, OpenAIProvider, GroqProvider, DeepSeekProvider, LLMProvider
 from escalation.router import ModelRouter
 from escalation.tracker import SpendTracker, SpendEntry
 from escalation.api import router as escalation_router
@@ -12,6 +12,7 @@ __all__ = [
     "AnthropicProvider",
     "OpenAIProvider",
     "GroqProvider",
+    "DeepSeekProvider",
     "LLMProvider",
     "escalation_router",
 ]

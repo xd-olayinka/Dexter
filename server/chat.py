@@ -5,7 +5,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
 from pydantic import BaseModel
 
 from models import Message, Protocol, Role
-from ollama_client import OllamaClient
+from brain import Brain
 
 log = logging.getLogger("dexter.chat")
 
@@ -33,8 +33,8 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
 
 
-def _get_ollama(request: Request) -> OllamaClient:
-    return request.app.state.ollama
+def _get_brain(request: Request) -> Brain:
+    return request.app.state.brain
 
 
 def _ensure_session(session_id: str | None) -> str:
@@ -54,14 +54,14 @@ def _build_messages(session_id: str, protocol: Protocol) -> list[dict]:
 
 @router.post("/send")
 async def send_message(body: ChatRequest, request: Request):
-    ollama = _get_ollama(request)
+    brain = _get_brain(request)
     sid = _ensure_session(body.session_id)
 
     user_msg = Message(role=Role.USER, content=body.message, protocol=body.protocol)
     sessions[sid].append(user_msg)
 
-    ollama_messages = _build_messages(sid, body.protocol)
-    response = await ollama.chat(ollama_messages)
+    llm_messages = _build_messages(sid, body.protocol)
+    response = await brain.chat(llm_messages)
 
     content = response["message"]["content"]
     assistant_msg = Message(role=Role.ASSISTANT, content=content, protocol=body.protocol)
@@ -84,7 +84,7 @@ async def get_history(session_id: str):
 
 async def websocket_chat(ws: WebSocket, app_state):
     await ws.accept()
-    ollama: OllamaClient = app_state.ollama
+    brain: Brain = app_state.brain
     session_id = uuid.uuid4().hex[:12]
     sessions[session_id] = []
 
@@ -99,8 +99,8 @@ async def websocket_chat(ws: WebSocket, app_state):
             user_msg = Message(role=Role.USER, content=content, protocol=protocol)
             sessions[session_id].append(user_msg)
 
-            ollama_messages = _build_messages(session_id, protocol)
-            stream = await ollama.chat(ollama_messages, stream=True)
+            llm_messages = _build_messages(session_id, protocol)
+            stream = await brain.chat(llm_messages, stream=True)
 
             full_content = ""
             async for chunk in stream:

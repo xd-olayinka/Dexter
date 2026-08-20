@@ -16,14 +16,14 @@ class OllamaClient:
         messages: list[dict],
         model: str | None = None,
         stream: bool = False,
+        tools: list[dict] | None = None,
     ):
         target = model or self.model
         try:
-            response = await self.client.chat(
-                model=target,
-                messages=messages,
-                stream=stream,
-            )
+            kwargs: dict = {"model": target, "messages": messages, "stream": stream}
+            if tools:
+                kwargs["tools"] = tools
+            response = await self.client.chat(**kwargs)
             return response
         except Exception as e:
             log.error("Ollama chat error: %s", e)

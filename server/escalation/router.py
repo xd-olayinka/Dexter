@@ -56,7 +56,7 @@ class ModelRouter:
                     reason="daily cloud budget exhausted — falling back to local",
                 )
 
-            for provider_name in ("anthropic", "openai"):
+            for provider_name in ("deepseek", "anthropic", "openai"):
                 provider = self.providers.get(provider_name)
                 if provider and await provider.available():
                     default_model = getattr(provider, "DEFAULT_MODEL", provider_name)

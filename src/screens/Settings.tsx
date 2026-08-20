@@ -169,6 +169,12 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
               <p className="subnote">Backend offline — start the server to see live status.</p>
             )}
             <ConnRow icon="⌁" name="Backend API" meta={API_URL} state={backendState} />
+            <ConnRow
+              icon="◉"
+              name="Intelligence · Brain"
+              meta={online && status?.brain ? `${status.brain.provider} · ${status.brain.model}` : undefined}
+              state={online && status?.brain ? (status.brain.ready ? 'on' : 'off') : 'unk'}
+            />
             <ConnRow icon="◆" name="Ollama" meta={ollamaMeta} state={ollama ? sys(ollama.ok) : 'unk'} />
             <ConnRow icon="▤" name="PostgreSQL" meta={db?.url} state={db ? sys(db.ok) : 'unk'} />
             <ConnRow icon="⌕" name="SearXNG Search" meta={searx?.url} state={searx ? sys(searx.ok) : 'unk'} />
@@ -195,6 +201,7 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
           {/* ---------- Cloud Escalation ---------- */}
           <div className="card">
             <div className="cardhead"><span className="label">Cloud Escalation</span></div>
+            <ProviderRow icon="◎" name="DeepSeek" ok={providerOk('deepseek')} />
             <ProviderRow icon="◈" name="Anthropic" ok={providerOk('anthropic')} />
             <ProviderRow icon="○" name="OpenAI" ok={providerOk('openai')} />
             <ProviderRow icon="»" name="Groq" ok={providerOk('groq')} />

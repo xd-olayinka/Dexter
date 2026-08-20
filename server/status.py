@@ -51,8 +51,12 @@ async def system_status(request: Request):
     for name, provider in providers.items():
         provider_status[name] = await provider.available()
 
+    brain = getattr(request.app.state, "brain", None)
+    brain_info = await brain.describe() if brain else {"provider": "none", "model": "—", "ready": False}
+
     return {
         "backend": {"ok": True, "version": "0.1.0"},
+        "brain": brain_info,
         "ollama": {
             "ok": ollama_ok,
             "url": settings.ollama_base_url,

@@ -202,6 +202,139 @@ class OpenAIProvider(LLMProvider):
         return (input_tokens * per_m_in + output_tokens * per_m_out) / 1_000_000
 
 
+class DeepSeekProvider(LLMProvider):
+    name = "deepseek"
+
+    BASE_URL = "https://api.deepseek.com/v1/chat/completions"
+    PRICING = {
+        "deepseek-chat": (0.27, 1.10),
+        "deepseek-reasoner": (0.55, 2.19),
+    }
+    DEFAULT_MODEL = "deepseek-chat"
+
+    def _headers(self) -> dict:
+        return {
+            "Authorization": f"Bearer {settings.deepseek_api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _convert_messages_out(self, messages: list[dict]) -> list[dict]:
+        out = []
+        for m in messages:
+            msg = {"role": m.get("role", "user"), "content": m.get("content") or ""}
+            tool_calls = m.get("tool_calls")
+            if tool_calls:
+                msg["tool_calls"] = [
+                    {
+                        "id": tc.get("id", f"call_{i}"),
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("function", {}).get("name", ""),
+                            "arguments": json.dumps(tc.get("function", {}).get("arguments", {}))
+                            if isinstance(tc.get("function", {}).get("arguments"), dict)
+                            else tc.get("function", {}).get("arguments", "{}"),
+                        },
+                    }
+                    for i, tc in enumerate(tool_calls)
+                ]
+            if m.get("role") == "tool":
+                msg["tool_call_id"] = m.get("tool_call_id", "")
+            out.append(msg)
+        return out
+
+    @staticmethod
+    def _normalize_tool_calls(raw: list[dict] | None) -> list[dict]:
+        if not raw:
+            return []
+        normalized = []
+        for tc in raw:
+            fn = tc.get("function", {})
+            args = fn.get("arguments", "{}")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+            normalized.append({
+                "id": tc.get("id", ""),
+                "function": {"name": fn.get("name", ""), "arguments": args},
+            })
+        return normalized
+
+    async def chat(
+        self,
+        messages: list[dict],
+        model: str,
+        stream: bool = False,
+        tools: list[dict] | None = None,
+    ) -> dict | AsyncIterator:
+        body: dict = {
+            "model": model,
+            "messages": self._convert_messages_out(messages),
+        }
+        if tools:
+            body["tools"] = tools
+        if stream:
+            body["stream"] = True
+            return self._stream_chat(body)
+
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(self.BASE_URL, headers=self._headers(), json=body)
+            resp.raise_for_status()
+            data = resp.json()
+            choice = data["choices"][0]
+            message = choice["message"]
+            result = {
+                "message": {
+                    "role": "assistant",
+                    "content": message.get("content") or "",
+                    "tool_calls": self._normalize_tool_calls(message.get("tool_calls")),
+                },
+                "done": True,
+                "usage": data.get("usage", {}),
+            }
+            if not result["message"]["tool_calls"]:
+                del result["message"]["tool_calls"]
+            return result
+
+    async def _stream_chat(self, body: dict) -> AsyncIterator:
+        headers = self._headers()
+
+        async def _iter():
+            async with httpx.AsyncClient(timeout=180) as client:
+                async with client.stream("POST", self.BASE_URL, headers=headers, json=body) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        payload = line[6:].strip()
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            event = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        choice = event.get("choices", [{}])[0]
+                        delta = choice.get("delta", {})
+                        content = delta.get("content") or ""
+                        done = choice.get("finish_reason") is not None
+                        frame = {"message": {"content": content}, "done": done}
+                        if done and event.get("usage"):
+                            frame["usage"] = event["usage"]
+                        yield frame
+        return _iter()
+
+    async def available(self) -> bool:
+        return bool(settings.deepseek_api_key)
+
+    def estimate_cost_for(self, model: str, input_tokens: int, output_tokens: int) -> float:
+        per_m_in, per_m_out = self.PRICING.get(model, self.PRICING[self.DEFAULT_MODEL])
+        return (input_tokens * per_m_in + output_tokens * per_m_out) / 1_000_000
+
+    def estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
+        return self.estimate_cost_for(self.DEFAULT_MODEL, input_tokens, output_tokens)
+
+
 class GroqProvider(LLMProvider):
     name = "groq"
 

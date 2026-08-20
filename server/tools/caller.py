@@ -32,6 +32,7 @@ async def run_with_tools(
             result = await tool_registry.execute(tool_call)
             messages.append({
                 "role": "tool",
+                "tool_call_id": tc.get("id", ""),
                 "content": result.content,
             })
 

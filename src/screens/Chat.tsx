@@ -146,7 +146,7 @@ export default function Chat({ mode }: { mode: Mode }) {
     e.target.value = ''
   }
 
-  const modelName = status?.ollama.model
+  const modelName = status?.brain?.ready ? status.brain.model : status?.ollama.model
   const chipLabel = wsOpen ? (modelName ? `Live · ${modelName}` : 'Live') : 'Demo mode — backend offline'
 
   return (

@@ -18,7 +18,9 @@ from escalation import (
     AnthropicProvider,
     OpenAIProvider,
     GroqProvider,
+    DeepSeekProvider,
 )
+from brain import Brain
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("dexter")
@@ -41,7 +43,9 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("Ollama not reachable at %s — chat will return stub responses", settings.ollama_base_url)
 
+    deepseek = DeepSeekProvider()
     providers = {
+        "deepseek": deepseek,
         "anthropic": AnthropicProvider(),
         "openai": OpenAIProvider(),
         "groq": GroqProvider(),
@@ -57,6 +61,14 @@ async def lifespan(app: FastAPI):
     app.state.escalation_providers = providers
     app.state.spend_tracker = tracker
     app.state.model_router = model_router
+
+    brain = Brain(ollama=ollama, deepseek=deepseek, tracker=tracker)
+    app.state.brain = brain
+    active = await brain.describe()
+    if active["ready"]:
+        log.info("Brain online — %s · %s", active["provider"], active["model"])
+    else:
+        log.warning("Brain has no provider — install Ollama or set DEXTER_DEEPSEEK_API_KEY")
 
     yield
 

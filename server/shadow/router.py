@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from config import settings
@@ -31,14 +31,19 @@ class RejectRequest(BaseModel):
 
 
 @router.post("/delegate")
-async def delegate_task(req: DelegateRequest):
+async def delegate_task(req: DelegateRequest, request: Request):
     mgr = get_manager()
     task = Task(
         title=req.title,
         description=req.description,
         budget_cap=req.budget_cap or settings.per_task_budget_default,
     )
-    task_id = await mgr.spawn(task)
+    work_fn = None
+    brain = getattr(request.app.state, "brain", None)
+    if brain is not None and (await brain.describe())["ready"]:
+        from shadow.work import make_llm_work_fn
+        work_fn = make_llm_work_fn(brain)
+    task_id = await mgr.spawn(task, work_fn=work_fn)
     return task.model_dump(mode="json")
 
 

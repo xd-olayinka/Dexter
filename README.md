@@ -38,4 +38,8 @@ copy .env.example .env
 .venv\Scripts\python run.py    # http://localhost:8000
 ```
 
+**Fastest way to a working brain:** set `DEXTER_DEEPSEEK_API_KEY` in `server/.env`
+(key from platform.deepseek.com) — chat and executors go live with no Ollama install.
+The Brain layer auto-prefers a healthy Ollama when present, falls back to DeepSeek otherwise.
+
 Live: https://xd-olayinka.github.io/Dexter/
