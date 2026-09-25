@@ -396,14 +396,14 @@ export const api = {
   me: () => request<MeInfo>('/api/auth/me'),
   login: (email: string, password: string) =>
     request<AuthResult>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  register: (email: string, password: string, name: string, businessName: string) =>
+  register: (email: string, password: string, name: string, businessName: string, inviteCode = '') =>
     request<AuthResult>('/api/auth/register', {
-      method: 'POST', body: JSON.stringify({ email, password, name, business_name: businessName }),
+      method: 'POST', body: JSON.stringify({ email, password, name, business_name: businessName, invite_code: inviteCode }),
     }),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   members: () => request<MemberInfo[]>('/api/auth/members'),
   invite: (email: string, role: 'admin' | 'member', name = '') =>
-    request<{ email: string; already_a_member: boolean }>('/api/auth/invite', {
+    request<{ email: string; already_a_member: boolean; invite_code: string | null }>('/api/auth/invite', {
       method: 'POST', body: JSON.stringify({ email, role, name }),
     }),
   businesses: () => request<BusinessInfo[]>('/api/auth/businesses'),

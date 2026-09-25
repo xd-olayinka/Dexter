@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from auth import current_context
 from models import EscalationLevel
 
-router = APIRouter(prefix="/api/escalation", tags=["escalation"])
+# Signed-in only when DEXTER_REQUIRE_AUTH is on — spend and routing are account data.
+router = APIRouter(prefix="/api/escalation", tags=["escalation"], dependencies=[Depends(current_context)])
 
 
 class RouteRequest(BaseModel):

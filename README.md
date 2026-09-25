@@ -21,7 +21,9 @@ a multi-business switcher; persistent Agent identity has a real efficiency score
 success metrics are tracked against their own stated targets; and the **Prometheus MCP bridge is
 wired and verified live** against a real production Prometheus workspace (`DEXTER_PROMETHEUS_MCP_URL`/
 `_TOKEN`). The Dependency map (business → team → agent → tool, PRD §4) shows real, observed
-relationships — never a fabricated edge. 30+ backend tests passing (`server/tests/`). Everything
+relationships — never a fabricated edge. With auth on, every data and control route (including
+Anthony's kill/approve/guard endpoints) needs a session, and claiming an invite needs its one-time
+code. 49 backend tests passing (`server/tests/`). Everything
 still degrades to Demo mode when the backend isn't running, so the Pages deploy stays alive.
 
 See [`docs/setup.html`](docs/setup.html) for the step-by-step install checklist — Ollama, Postgres + pgvector, SearXNG, voice pipeline, ntfy phone push, optional cloud API keys.

@@ -37,10 +37,17 @@ Prometheus↔Dexter MCP bridge, and the success metrics PRD §8 defines but noth
 
 `server/auth.py`, `server/db/schema.sql` (`businesses`/`users`/`business_members`/`sessions`),
 `src/lib/auth.tsx`, `src/screens/Auth.tsx`. `projects.py`, `files.py`, `chat.py`'s memory recall,
-and `shadow/router.py`'s `/delegate` are all scoped by `business_id`. One thing not done: the
-`agents`/`task_log`/`documents` tables are business-scoped, but the live `ExecutorManager`/
-`GateManager` singletons are still process-wide (see §2's note) — acceptable given this backend's
-single-machine-per-Commander deployment model, not a full multi-tenant isolation guarantee.
+and `shadow/router.py`'s `/delegate` are all scoped by `business_id`. The live `ExecutorManager`/
+`GateManager` singletons are still process-wide (see §2's note), so `shadow/router.py` filters
+live tasks and gates by the `business_id` stamped into `task.metadata` at spawn: another business's
+task is a 404 for list/get/kill/approve/reject. That's route-level isolation on one machine, not a
+full multi-tenant guarantee (budget snapshot and spend ledger are still global).
+
+**Which routes need a session (with `DEXTER_REQUIRE_AUTH=true`):** everything except `/`,
+`/api/status` (drives the offline/demo detection) and `/api/auth/{register,login}`. All of
+`/api/shadow/*` and `/api/escalation/*` take `current_context` at the router level (2026-09-25 —
+before that, kill, gate approve/reject, guard edits and spend were reachable without a session).
+Guard edits (`PATCH /guards`, rule add/remove) additionally require owner/admin.
 
 
 **Design decision:** no Clerk/Auth0 (the PRD's own suggestion) — this backend's stated philosophy
@@ -58,8 +65,9 @@ Prometheus uses for its first workspace).
 `sessions` (token_hash, user_id, expires_at). `projects`/`tasks` gain a nullable `business_id`
 (nullable so existing local rows aren't orphaned).
 
-**Backend:** `server/auth.py` — register/login/logout/me, a `require_user` (or
-`optional_user` when `DEXTER_REQUIRE_AUTH=false`) FastAPI dependency, PBKDF2-SHA256 password
+**Backend:** `server/auth.py` — register/login/logout/me/invite, the `current_context` FastAPI
+dependency (resolves the bearer session; returns the default owner context when
+`DEXTER_REQUIRE_AUTH=false`), PBKDF2-SHA256 password
 hashing (stdlib `hashlib`, no new native dependency).
 
 **Frontend:** `src/lib/auth.tsx` (AuthProvider, mirrors `backend.tsx`'s pattern), a login/register
@@ -158,7 +166,11 @@ Three honest gaps flagged in the first "vision review" after §1-§4 landed, clo
   person to actually join yours. Added `POST /api/auth/invite` (owner/admin) and taught `register`
   to recognize and *claim* a pending invite (a placeholder `users` row with an unusable
   `password_hash`) instead of creating a second business — mirrors Prometheus's own
-  `claimPendingInvite` pattern exactly. `Team()`'s "+ Invite" button is wired.
+  `claimPendingInvite` pattern. `Team()`'s "+ Invite" button is wired.
+  **Hardened 2026-09-25:** claiming now needs a one-time invite code (`users.invite_code_hash`,
+  hashed like session tokens). `invite` returns it once and the Team screen shows it for the
+  inviter to pass on; re-inviting a still-pending email rotates it. Before this, anyone who knew
+  an invited email could register first and take over the invite.
 - **`agents.model_route` was never populated.** `shadow/router.py`'s `/delegate` now captures the
   Brain's actual `provider:model` at spawn time and threads it through `record_spawn`.
 - **Metrics had no target to compare against.** PRD §8's own stated v1 targets (10 min

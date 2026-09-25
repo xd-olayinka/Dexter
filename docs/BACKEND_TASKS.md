@@ -7,8 +7,9 @@ go (see `docs/setup.html`), and the corresponding subsystem lights up.
 
 Run it: `cd server && python -m venv .venv && .venv\Scripts\pip install -r requirements.txt && copy .env.example .env && .venv\Scripts\python run.py` → http://localhost:8000 (`/docs` for Swagger).
 
-**Status (2026-09-24): P1–P6 below are all built and tested** (`server/tests/test_smoke.py`,
-18 passing — run with `.venv\Scripts\python -m pytest tests/ -q`). This file is kept as the
+**Status (2026-09-24): P1–P6 below are all built and tested** (`server/tests/test_smoke.py`
+— run with `.venv\Scripts\python -m pytest tests/ -q`; the suite now also covers Phase 3/4,
+see `docs/PHASE_3_4_PLAN.md`). This file is kept as the
 reference for what each layer does; the "Pending work" section is now a "What P1–P6 built"
 record instead.
 

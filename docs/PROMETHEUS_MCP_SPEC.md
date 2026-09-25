@@ -9,6 +9,18 @@
 > **Consumers:** Dexter backend (`server/` — Python FastAPI), Anthony executor agents  
 > **Provider:** Prometheus backend (`apps/web/convex/` — Convex)
 
+> **As built (2026-09-25) — where the implementation differs from this spec:**
+> - **Argument names are camelCase on the wire** (`issueId`, `toStateId`, `projectId`, `teamId`,
+>   `cycleId`, `sourceId`/`targetId`), and `attach_artifact`/`update_issue` take a nested
+>   `artifact: {kind, ref, url?, sha?}` object. The snake_case names in §2 and §5 are the
+>   *Python* signatures of Dexter's `prometheus_*` tools, not the MCP arguments.
+>   Source of truth: `inputSchema` in Prometheus `apps/web/convex/mcp/router.ts`.
+> - **Transport:** Prometheus implements HTTP JSON-RPC only (Convex HTTP action). No stdio sidecar.
+> - **Client module** lives at `server/integrations/prometheus_mcp.py` (not `server/mcp/prometheus.py`).
+> - **All 16 tools** in §2.1–2.2 exist on both sides (Prometheus router + tests; Dexter registers
+>   16 `prometheus_*` tools when `DEXTER_PROMETHEUS_MCP_URL`/`_TOKEN` are set).
+> - **§2.3 MCP resources (`prometheus://…`) are not built** on the Prometheus side.
+
 ---
 
 ## 1. Integration Model

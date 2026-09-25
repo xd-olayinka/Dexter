@@ -14,7 +14,7 @@ interface AuthState {
   needsLogin: boolean
   businesses: BusinessInfo[]
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, name: string, businessName: string) => Promise<void>
+  register: (email: string, password: string, name: string, businessName: string, inviteCode?: string) => Promise<void>
   logout: () => void
   refresh: () => Promise<void>
   switchBusiness: (businessId: string) => Promise<void>
@@ -69,8 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refresh()
   }, [refresh])
 
-  const register = useCallback(async (email: string, password: string, name: string, businessName: string) => {
-    const res = await api.register(email, password, name, businessName)
+  const register = useCallback(async (email: string, password: string, name: string, businessName: string, inviteCode = '') => {
+    const res = await api.register(email, password, name, businessName, inviteCode)
     setAuthToken(res.token)
     await refresh()
   }, [refresh])

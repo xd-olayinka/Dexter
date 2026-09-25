@@ -12,6 +12,7 @@ export default function Auth() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [businessName, setBusinessName] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -21,7 +22,7 @@ export default function Auth() {
     setError('')
     try {
       if (mode === 'login') await login(email, password)
-      else await register(email, password, name, businessName || 'My Business')
+      else await register(email, password, name, businessName || 'My Business', inviteCode.trim())
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not reach the backend')
     } finally {
@@ -55,6 +56,12 @@ export default function Auth() {
           <div className="set-field">
             <label className="label set-label">Business name</label>
             <input className="set-input" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="My Business" />
+          </div>
+        )}
+        {mode === 'register' && (
+          <div className="set-field">
+            <label className="label set-label">Invite code (if you were invited)</label>
+            <input className="set-input" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Leave blank to start your own business" />
           </div>
         )}
         {error && <p className="subnote" style={{ color: 'var(--warn, #C7361F)' }}>{error}</p>}

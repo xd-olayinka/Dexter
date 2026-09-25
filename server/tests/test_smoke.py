@@ -292,3 +292,119 @@ def test_compute_efficiency_rewards_cheap_clean_completions():
     # spend floor: a free task doesn't divide by zero or return infinity
     from shadow.agents_store import SPEND_FLOOR
     assert compute_efficiency(0.0, TaskStatus.DONE) == round(1.0 / SPEND_FLOOR, 4)
+
+
+# ---------------------------------------------------------------- auth coverage on Anthony's control plane
+
+from auth import CurrentContext, current_context  # noqa: E402
+from config import settings as _settings  # noqa: E402
+
+
+def _ctx(business_id: str, role: str = "owner") -> CurrentContext:
+    return CurrentContext(user_id=f"u_{business_id}", email=f"{business_id}@x.com", name="", business_id=business_id, business_name=business_id, role=role)
+
+
+@pytest.fixture()
+def as_business():
+    """Swap the caller's context mid-test — stands in for two signed-in users."""
+    def use(business_id: str, role: str = "owner"):
+        app.dependency_overrides[current_context] = lambda: _ctx(business_id, role)
+    yield use
+    app.dependency_overrides.pop(current_context, None)
+
+
+@pytest.mark.parametrize("method,path", [
+    ("get", "/api/shadow/tasks"),
+    ("post", "/api/shadow/tasks/task_x/kill"),
+    ("get", "/api/shadow/gates"),
+    ("post", "/api/shadow/gates/task_x/approve"),
+    ("post", "/api/shadow/gates/task_x/reject"),
+    ("post", "/api/shadow/gates/test"),
+    ("get", "/api/shadow/budget"),
+    ("patch", "/api/shadow/guards"),
+    ("get", "/api/escalation/spend"),
+    ("post", "/api/escalation/route"),
+])
+def test_control_plane_requires_a_session_when_auth_is_on(client, monkeypatch, method, path):
+    monkeypatch.setattr(_settings, "require_auth", True)
+    assert getattr(client, method)(path).status_code == 401
+
+
+def test_tasks_are_scoped_to_the_callers_business(client, as_business):
+    as_business("biz_a")
+    task_id = client.post("/api/shadow/delegate", json={"title": "A's task"}).json()["id"]
+    assert any(t["id"] == task_id for t in client.get("/api/shadow/tasks").json())
+
+    as_business("biz_b")
+    assert all(t["id"] != task_id for t in client.get("/api/shadow/tasks").json())
+    assert client.get(f"/api/shadow/tasks/{task_id}").status_code == 404
+    assert client.post(f"/api/shadow/tasks/{task_id}/kill").status_code == 404
+    assert client.post(f"/api/shadow/gates/{task_id}/approve").status_code == 404
+
+
+def test_guard_edits_need_owner_or_admin(client, as_business):
+    as_business("biz_a", role="member")
+    assert client.get("/api/shadow/guards").status_code == 200
+    assert client.patch("/api/shadow/guards", json={"daily_budget": 1}).status_code == 403
+    assert client.post("/api/shadow/guards/rules", json={"name": "r"}).status_code == 403
+    assert client.delete("/api/shadow/guards/rules/whatever").status_code == 403
+
+
+# ---------------------------------------------------------------- invite claim needs the code
+
+class _FakeCursor:
+    def __init__(self, row):
+        self._row = row
+
+    async def fetchone(self):
+        return self._row
+
+
+class _FakeConn:
+    """Scripted stand-in for the few queries `register` runs against a pending invite."""
+    def __init__(self, code_hash):
+        self.code_hash = code_hash
+        self.password_set = False
+
+    async def execute(self, sql, params=()):
+        if sql.startswith("SELECT id, password_hash FROM users"):
+            return _FakeCursor(("user_inv", ""))
+        if sql.startswith("SELECT invite_code_hash"):
+            return _FakeCursor((self.code_hash,))
+        if sql.startswith("UPDATE users SET password_hash"):
+            self.password_set = True
+        if "FROM business_members" in sql:
+            return _FakeCursor(("biz_host", "Host Co", "member"))
+        return _FakeCursor(None)
+
+
+class _FakePool:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def connection(self):
+        pool = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                return pool.conn
+
+            async def __aexit__(self, *exc):
+                return False
+        return _Ctx()
+
+
+@pytest.mark.parametrize("code,expected", [("", 403), ("wrong", 403), ("right-code", 201)])
+def test_claiming_a_pending_invite_requires_its_code(client, monkeypatch, code, expected):
+    import auth
+    conn = _FakeConn(auth._hash_token("right-code"))
+
+    async def fake_pool():
+        return _FakePool(conn)
+    monkeypatch.setattr(auth, "get_pool", fake_pool)
+
+    res = client.post("/api/auth/register", json={"email": "inv@x.com", "password": "pw", "invite_code": code})
+    assert res.status_code == expected
+    assert conn.password_set is (expected == 201)
+    if expected == 201:
+        assert res.json()["business_id"] == "biz_host"

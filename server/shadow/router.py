@@ -10,7 +10,30 @@ from shadow.guard_config import GuardConfig, guard_config_store
 from shadow.agents_store import list_agents
 from auth import CurrentContext, current_context
 
-router = APIRouter(prefix="/api/shadow", tags=["shadow"])
+# Every route here needs a signed-in caller when DEXTER_REQUIRE_AUTH is on (kill, gate
+# approve/reject and guard edits control real spend). With auth off, current_context
+# resolves to the default owner, so single-user setups are unaffected.
+router = APIRouter(prefix="/api/shadow", tags=["shadow"], dependencies=[Depends(current_context)])
+
+TEST_GATE_ID = "test"
+
+
+def _require_manager(ctx: CurrentContext) -> None:
+    if ctx.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Only an owner or admin can change guardrails")
+
+
+def _task_in_business(task: Task | None, ctx: CurrentContext) -> bool:
+    """ExecutorManager is process-wide (docs/PHASE_3_4_PLAN.md §1), so live tasks are
+    filtered to the caller's business here — the id stamped on at spawn time."""
+    return task is not None and task.metadata.get("business_id") == ctx.business_id
+
+
+async def _owned_task(task_id: str, ctx: CurrentContext) -> Task:
+    task = await get_manager().get_status(task_id)
+    if not _task_in_business(task, ctx):
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 _manager: ExecutorManager | None = None
 
@@ -40,6 +63,7 @@ async def delegate_task(req: DelegateRequest, request: Request, ctx: CurrentCont
         title=req.title,
         description=req.description,
         budget_cap=req.budget_cap or config.per_task_budget_default,
+        metadata={"business_id": ctx.business_id},
     )
     work_fn = None
     model_route = None
@@ -62,22 +86,20 @@ async def get_agents(ctx: CurrentContext = Depends(current_context)):
 
 
 @router.get("/tasks")
-async def list_tasks():
+async def list_tasks(ctx: CurrentContext = Depends(current_context)):
     mgr = get_manager()
-    return [t.model_dump(mode="json") for t in mgr.list_all()]
+    return [t.model_dump(mode="json") for t in mgr.list_all() if _task_in_business(t, ctx)]
 
 
 @router.get("/tasks/{task_id}")
-async def get_task(task_id: str):
-    mgr = get_manager()
-    task = await mgr.get_status(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+async def get_task(task_id: str, ctx: CurrentContext = Depends(current_context)):
+    task = await _owned_task(task_id, ctx)
     return task.model_dump(mode="json")
 
 
 @router.post("/tasks/{task_id}/kill")
-async def kill_task(task_id: str):
+async def kill_task(task_id: str, ctx: CurrentContext = Depends(current_context)):
+    await _owned_task(task_id, ctx)
     mgr = get_manager()
     killed = await mgr.kill(task_id)
     if not killed:
@@ -87,8 +109,12 @@ async def kill_task(task_id: str):
 
 
 @router.get("/gates")
-async def list_gates():
+async def list_gates(ctx: CurrentContext = Depends(current_context)):
     mgr = get_manager()
+    visible = [
+        g for g in mgr.gate_manager.list_pending()
+        if g.task_id == TEST_GATE_ID or _task_in_business(await mgr.get_status(g.task_id), ctx)
+    ]
     return [
         {
             "task_id": g.task_id,
@@ -98,12 +124,14 @@ async def list_gates():
             "status": g.status,
             "resolved_at": g.resolved_at.isoformat() if g.resolved_at else None,
         }
-        for g in mgr.gate_manager.list_pending()
+        for g in visible
     ]
 
 
 @router.post("/gates/{task_id}/approve")
-async def approve_gate(task_id: str):
+async def approve_gate(task_id: str, ctx: CurrentContext = Depends(current_context)):
+    if task_id != TEST_GATE_ID:
+        await _owned_task(task_id, ctx)
     mgr = get_manager()
     approved = await mgr.approve_gate(task_id)
     if not approved:
@@ -112,7 +140,9 @@ async def approve_gate(task_id: str):
 
 
 @router.post("/gates/{task_id}/reject")
-async def reject_gate(task_id: str, req: RejectRequest | None = None):
+async def reject_gate(task_id: str, req: RejectRequest | None = None, ctx: CurrentContext = Depends(current_context)):
+    if task_id != TEST_GATE_ID:
+        await _owned_task(task_id, ctx)
     mgr = get_manager()
     reason = req.reason if req else ""
     rejected = await mgr.reject_gate(task_id, reason)
@@ -125,7 +155,7 @@ async def reject_gate(task_id: str, req: RejectRequest | None = None):
 async def create_test_gate():
     mgr = get_manager()
     gate = await mgr.gate_manager.create_gate(
-        task_id="test",
+        task_id=TEST_GATE_ID,
         reason="Test notification — tap approve to dismiss",
         task_title="Test gate from Settings",
     )
@@ -178,17 +208,20 @@ async def get_guard_config():
 
 
 @router.patch("/guards", response_model=GuardConfig)
-async def patch_guard_config(patch: GuardPatch):
+async def patch_guard_config(patch: GuardPatch, ctx: CurrentContext = Depends(current_context)):
+    _require_manager(ctx)
     return await guard_config_store.update(patch.model_dump(exclude_unset=True))
 
 
 @router.post("/guards/rules", response_model=GuardConfig, status_code=201)
-async def add_guard_rule(rule: RuleIn):
+async def add_guard_rule(rule: RuleIn, ctx: CurrentContext = Depends(current_context)):
+    _require_manager(ctx)
     return await guard_config_store.add_rule(
         name=rule.name, keyword=rule.keyword, max_spend=rule.max_spend, require_approval=rule.require_approval,
     )
 
 
 @router.delete("/guards/rules/{rule_id}", response_model=GuardConfig)
-async def remove_guard_rule(rule_id: str):
+async def remove_guard_rule(rule_id: str, ctx: CurrentContext = Depends(current_context)):
+    _require_manager(ctx)
     return await guard_config_store.remove_rule(rule_id)

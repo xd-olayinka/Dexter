@@ -508,6 +508,7 @@ export function Team() {
   const [inviting, setInviting] = useState(false)
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
+  const [lastInvite, setLastInvite] = useState<{ email: string; code: string } | null>(null)
 
   async function load() {
     try {
@@ -525,10 +526,14 @@ export function Team() {
     setBusy(true)
     try {
       const res = await api.invite(v, 'member')
-      if (res.already_a_member) {
+      if (res.already_a_member && !res.invite_code) {
         toast.push({ title: `${v} is already on this team`, kind: 'info' })
+      } else if (res.invite_code) {
+        // New (or still-pending) account: they need this code to register. Shown once.
+        setLastInvite({ email: v, code: res.invite_code })
+        toast.push({ title: 'Invited', body: `Send ${v} their invite code`, kind: 'good' })
       } else {
-        toast.push({ title: 'Invited', body: `${v} can now sign up (or sign in) with that email to join`, kind: 'good' })
+        toast.push({ title: 'Invited', body: `${v} already has an account — they'll see this business after signing in`, kind: 'good' })
       }
       setEmail('')
       setInviting(false)
@@ -560,8 +565,18 @@ export function Team() {
             <button className="send" aria-label="Invite" onClick={invite} disabled={busy}>↑</button>
           </div>
           <p className="subnote" style={{ marginTop: 8 }}>
-            No email is sent — tell them to sign up (or sign in) with this address, and they'll land in your business, not their own.
+            No email is sent — new teammates get an invite code to enter when they register with this address, and they'll land in your business, not their own.
           </p>
+        </div>
+      )}
+      {usingLive && lastInvite && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="cardhead">
+            <span className="label">Invite code for {lastInvite.email}</span>
+            <button className="more" onClick={() => setLastInvite(null)}>Done</button>
+          </div>
+          <p className="subnote" style={{ userSelect: 'all', fontFamily: 'monospace', fontSize: 16 }}>{lastInvite.code}</p>
+          <p className="subnote">Shown once. Inviting the same email again issues a new code and voids this one.</p>
         </div>
       )}
       <div className="card">

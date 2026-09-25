@@ -96,6 +96,10 @@ async def prometheus_post_feedback(issue_id: str, body: str) -> str:
     return await _wrap(_client_or_raise().post_feedback(issue_id, body))
 
 
+async def prometheus_comment_issue(issue_id: str, body: str) -> str:
+    return await _wrap(_client_or_raise().comment_issue(issue_id, body))
+
+
 async def prometheus_create_issue(team_id: str, title: str, description: str = None) -> str:
     return await _wrap(_client_or_raise().create_issue(team_id, title, description=description))
 
@@ -185,6 +189,12 @@ if _client is not None:
         description="Post a completion report to a Prometheus issue",
         parameters={"issue_id": {"type": "string"}, "body": {"type": "string"}},
         handler=prometheus_post_feedback,
+    ))
+    registry.register(Tool(
+        name="prometheus_comment_issue",
+        description="Add a plain comment to a Prometheus issue (no artifacts, not a completion report)",
+        parameters={"issue_id": {"type": "string"}, "body": {"type": "string"}},
+        handler=prometheus_comment_issue,
     ))
     registry.register(Tool(
         name="prometheus_create_issue",

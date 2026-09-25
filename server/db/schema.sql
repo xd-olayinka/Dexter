@@ -155,6 +155,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- Which of the user's (possibly several) businesses this session currently acts as;
 -- set at login/register, changeable via POST /api/auth/switch-business.
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS current_business_id TEXT;
+-- Pending invites: hash of the one-time code `register` must present to claim the
+-- placeholder account (knowing the email alone isn't enough). NULL once claimed.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_code_hash TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_business_members_user ON business_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

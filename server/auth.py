@@ -169,6 +169,7 @@ class RegisterIn(BaseModel):
     password: str
     name: str = ""
     business_name: str = "My Business"
+    invite_code: str = ""  # required only to claim a pending invite
 
 
 class LoginIn(BaseModel):
@@ -232,10 +233,19 @@ async def register(body: RegisterIn):
 
         if existing:
             # Claiming a pending invite: same user_id, set the password, join whatever
-            # business(es) they were already invited to — never create a new one.
+            # business(es) they were already invited to — never create a new one. Needs
+            # the invite code the inviter was shown: knowing an invited email must not be
+            # enough to take over the account (and its business memberships).
             user_id = existing[0]
+            cur = await conn.execute("SELECT invite_code_hash FROM users WHERE id = %s", (user_id,))
+            code_hash = (await cur.fetchone())[0]
+            if not body.invite_code or not code_hash or not hmac.compare_digest(_hash_token(body.invite_code.strip()), code_hash):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"{body.email} has a pending invite — enter the invite code you were sent to claim it",
+                )
             await conn.execute(
-                "UPDATE users SET password_hash = %s, name = COALESCE(NULLIF(name, ''), %s) WHERE id = %s",
+                "UPDATE users SET password_hash = %s, name = COALESCE(NULLIF(name, ''), %s), invite_code_hash = NULL WHERE id = %s",
                 (_hash_password(body.password), body.name or body.email.split("@")[0], user_id),
             )
             cur = await conn.execute(
@@ -282,13 +292,17 @@ class InviteIn(BaseModel):
 class InviteOut(BaseModel):
     email: str
     already_a_member: bool
+    # One-time code the invitee enters at registration. Only set when the email has no
+    # real account yet (an existing account just signs in). Returned once, stored hashed.
+    invite_code: str | None = None
 
 
 @router.post("/invite", response_model=InviteOut, status_code=201)
 async def invite_member(body: InviteIn, ctx: CurrentContext = Depends(current_context)):
     """Owner/admin adds an email to their business. If that email hasn't signed up
     anywhere yet, this creates a placeholder account (unusable password_hash — nobody
-    can log in as it) that `register` recognizes and claims later. If the email
+    can log in as it) plus a one-time invite code, which `register` requires to claim
+    it — re-inviting a still-pending email rotates the code. If the email
     already has a real account elsewhere, this just adds them as an additional member
     of THIS business too — `business_members` is many-to-many by design."""
     if ctx.role not in ("owner", "admin"):
@@ -301,15 +315,22 @@ async def invite_member(body: InviteIn, ctx: CurrentContext = Depends(current_co
 
     email = body.email.lower()
     async with pool.connection() as conn:
-        cur = await conn.execute("SELECT id FROM users WHERE email = %s", (email,))
+        invite_code = None
+        cur = await conn.execute("SELECT id, password_hash FROM users WHERE email = %s", (email,))
         row = await cur.fetchone()
         if row:
             user_id = row[0]
+            if not row[1]:  # still a pending placeholder — rotate its code
+                invite_code = secrets.token_urlsafe(12)
+                await conn.execute(
+                    "UPDATE users SET invite_code_hash = %s WHERE id = %s", (_hash_token(invite_code), user_id),
+                )
         else:
             user_id = f"user_{uuid.uuid4().hex[:8]}"
+            invite_code = secrets.token_urlsafe(12)
             await conn.execute(
-                "INSERT INTO users (id, email, password_hash, name) VALUES (%s, %s, '', %s)",
-                (user_id, email, body.name or email.split("@")[0]),
+                "INSERT INTO users (id, email, password_hash, name, invite_code_hash) VALUES (%s, %s, '', %s, %s)",
+                (user_id, email, body.name or email.split("@")[0], _hash_token(invite_code)),
             )
 
         cur = await conn.execute(
@@ -317,13 +338,13 @@ async def invite_member(body: InviteIn, ctx: CurrentContext = Depends(current_co
             (ctx.business_id, user_id),
         )
         if await cur.fetchone():
-            return InviteOut(email=email, already_a_member=True)
+            return InviteOut(email=email, already_a_member=True, invite_code=invite_code)
 
         await conn.execute(
             "INSERT INTO business_members (business_id, user_id, role) VALUES (%s, %s, %s)",
             (ctx.business_id, user_id, body.role),
         )
-    return InviteOut(email=email, already_a_member=False)
+    return InviteOut(email=email, already_a_member=False, invite_code=invite_code)
 
 
 @router.post("/login", response_model=AuthOut)
