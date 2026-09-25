@@ -62,10 +62,16 @@ class Brain:
             model = "—"
         return {"provider": provider, "model": model, "ready": provider != "stub"}
 
-    def _record_usage(self, model: str, usage: dict, task_id: str | None = None) -> float:
+    async def _record_usage(
+        self, model: str, usage: dict, task_id: str | None = None,
+        business_id: str | None = None, source: str = "chat",
+    ) -> float:
+        import ledger
+
         input_tokens = usage.get("prompt_tokens", 0)
         output_tokens = usage.get("completion_tokens", 0)
         cost = self.deepseek.estimate_cost_for(model, input_tokens, output_tokens)
+        await ledger.record(business_id, "deepseek", model, input_tokens, output_tokens, cost, task_id=task_id, source=source)
         if self.tracker and cost > 0:
             self.tracker.record(
                 provider="deepseek",
@@ -85,6 +91,8 @@ class Brain:
         tools: list[dict] | None = None,
         reasoning: bool = False,
         task_id: str | None = None,
+        business_id: str | None = None,
+        source: str = "chat",
     ):
         provider = await self.resolve()
 
@@ -102,13 +110,13 @@ class Brain:
                     async def _tracked():
                         async for frame in inner:
                             if frame.get("done") and frame.get("usage"):
-                                self._record_usage(target, frame["usage"], task_id)
+                                await self._record_usage(target, frame["usage"], task_id, business_id, source)
                             yield frame
                     return _tracked()
 
                 response = await self.deepseek.chat(messages, model=target, tools=tools)
                 if response.get("usage"):
-                    cost = self._record_usage(target, response["usage"], task_id)
+                    cost = await self._record_usage(target, response["usage"], task_id, business_id, source)
                     response["cost_usd"] = cost
                 return response
             except Exception as e:

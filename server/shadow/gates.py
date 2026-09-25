@@ -11,6 +11,17 @@ from config import settings
 log = logging.getLogger("dexter.shadow.gates")
 
 
+async def notify_push(title: str, body: str, priority: str = "high", tags: str = "warning") -> None:
+    """Phone push via ntfy — gates and ledger alerts (burn rate, budget, provider caps)."""
+    url = f"{settings.ntfy_server}/{settings.ntfy_topic}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(url, content=body, headers={"Title": title, "Priority": priority, "Tags": tags})
+        log.info("Push notification sent to %s", url)
+    except Exception as exc:
+        log.warning("Failed to send push notification: %s", exc)
+
+
 @dataclass
 class ApprovalGate:
     task_id: str
@@ -62,20 +73,4 @@ class GateManager:
         return self._gates.get(task_id)
 
     async def _notify(self, gate: ApprovalGate) -> None:
-        url = f"{settings.ntfy_server}/{settings.ntfy_topic}"
-        title = f"Dexter Gate: {gate.task_title or gate.task_id}"
-        body = f"{gate.reason}"
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                await client.post(
-                    url,
-                    content=body,
-                    headers={
-                        "Title": title,
-                        "Priority": "high",
-                        "Tags": "warning",
-                    },
-                )
-            log.info("Gate notification sent to %s", url)
-        except Exception as exc:
-            log.warning("Failed to send gate notification: %s", exc)
+        await notify_push(f"Dexter Gate: {gate.task_title or gate.task_id}", gate.reason)

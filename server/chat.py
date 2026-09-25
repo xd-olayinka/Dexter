@@ -146,7 +146,7 @@ async def send_message(body: ChatRequest, request: Request, ctx: CurrentContext 
         await _document_note(request.app.state.embed_fn, body.message, ctx.business_id),
     ]
     llm_messages = _build_messages(sid, body.protocol, notes)
-    response = await brain.chat(llm_messages)
+    response = await brain.chat(llm_messages, business_id=ctx.business_id)
 
     content = response["message"]["content"]
     assistant_msg = Message(role=Role.ASSISTANT, content=content, protocol=body.protocol)
@@ -203,7 +203,7 @@ async def websocket_chat(ws: WebSocket, app_state, token: str | None = None):
                 await _document_note(app_state.embed_fn, content, ctx.business_id),
             ]
             llm_messages = _build_messages(session_id, protocol, notes)
-            stream = await brain.chat(llm_messages, stream=True)
+            stream = await brain.chat(llm_messages, stream=True, business_id=ctx.business_id)
 
             full_content = ""
             async for chunk in stream:

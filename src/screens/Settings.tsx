@@ -4,7 +4,7 @@
 // change (backend URL, test push). No system here is faked: everything
 // with a live dot is read straight from useBackend()/api.status().
 import { useEffect, useState } from 'react'
-import { api, ApiError, setApiUrl, API_URL, type DocumentRecord, type GuardConfig, type SpendReport } from '../lib/api'
+import { api, ApiError, setApiUrl, API_URL, type ArchiveAnswer, type BriefingScript, type DocumentRecord, type GuardConfig, type Notebook, type SpendReport } from '../lib/api'
 import { useBackend } from '../lib/backend'
 import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/auth'
@@ -146,6 +146,25 @@ function GuardsCard({ online }: { online: boolean }) {
           <NumField label="Per-task default ($)" value={config.per_task_budget_default} step={0.1} onCommit={(v) => patch({ per_task_budget_default: v })} />
           <NumField label="High-cost multiplier (×)" value={config.high_cost_multiplier} step={0.5} onCommit={(v) => patch({ high_cost_multiplier: v })} />
           <NumField label="Long-running limit (minutes)" value={config.long_running_minutes} step={5} onCommit={(v) => patch({ long_running_minutes: v })} />
+          <NumField label="Monthly budget ($)" value={config.monthly_budget} step={5} onCommit={(v) => patch({ monthly_budget: v })} />
+          <NumField label="Per-agent daily cap ($, 0 = off)" value={config.agent_daily_cap ?? 0} step={0.5} onCommit={(v) => patch({ agent_daily_cap: v > 0 ? v : null })} />
+          <NumField label="Burn-rate alert ($/hour, 0 = off)" value={config.burn_rate_alert_per_hour ?? 0} step={0.5} onCommit={(v) => patch({ burn_rate_alert_per_hour: v > 0 ? v : null })} />
+          <div className="cardhead" style={{ marginTop: 8 }}><span className="label" style={{ fontSize: 12 }}>Provider monthly caps</span></div>
+          <p className="subnote">The Selector stops routing to a provider once its cap is reached; a running task on it is stopped.</p>
+          {['anthropic', 'openai', 'deepseek', 'groq'].map((prov) => (
+            <NumField
+              key={prov}
+              label={`${prov} ($/month, 0 = no cap)`}
+              value={config.provider_monthly_caps[prov] ?? 0}
+              step={5}
+              onCommit={(v) => {
+                const caps = { ...config.provider_monthly_caps }
+                if (v > 0) caps[prov] = v
+                else delete caps[prov]
+                patch({ provider_monthly_caps: caps })
+              }}
+            />
+          ))}
 
           <div className="cardhead" style={{ marginTop: 8 }}><span className="label" style={{ fontSize: 12 }}>Custom rules</span></div>
           {config.custom_rules.length === 0 && <p className="subnote">No custom rules yet.</p>}
@@ -230,6 +249,146 @@ function DocumentsCard({ online }: { online: boolean }) {
           <div className="ic">{d.source === 'url' ? '⎘' : '▤'}</div>
           <div className="body"><div className="nm">{d.title}</div><div className="meta">{d.char_count.toLocaleString()} chars · {d.origin}</div></div>
           <button className="set-btn" onClick={() => remove(d.id)}>Delete</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ---------- Archive (Phase 6 · v1) ----------
+
+function ArchiveCard({ online }: { online: boolean }) {
+  const toast = useToast()
+  const [notebooks, setNotebooks] = useState<Notebook[] | null>(null)
+  const [title, setTitle] = useState('')
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [nbDocs, setNbDocs] = useState<Array<{ id: string; title: string }>>([])
+  const [allDocs, setAllDocs] = useState<DocumentRecord[]>([])
+  const [question, setQuestion] = useState('')
+  const [answer, setAnswer] = useState<ArchiveAnswer | null>(null)
+  const [script, setScript] = useState<BriefingScript | null>(null)
+  const [busy, setBusy] = useState<'' | 'ask' | 'brief'>('')
+
+  async function load() {
+    try {
+      setNotebooks(await api.notebooks())
+      setAllDocs(await api.files())
+    } catch {
+      setNotebooks(null)
+    }
+  }
+  useEffect(() => { if (online) load(); else setNotebooks(null) }, [online])
+
+  async function open(id: string) {
+    setOpenId(id === openId ? null : id)
+    setAnswer(null)
+    setScript(null)
+    if (id !== openId) setNbDocs(await api.notebookDocuments(id).catch(() => []))
+  }
+
+  async function create() {
+    if (!title.trim()) return
+    try {
+      await api.createNotebook(title.trim())
+      setTitle('')
+      load()
+    } catch (e) {
+      toast.push({ title: 'Could not create notebook', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  async function add(docId: string) {
+    if (!openId || !docId) return
+    await api.addToNotebook(openId, docId).catch((e) => toast.push({ title: 'Could not add', body: errMsg(e), kind: 'warn' }))
+    setNbDocs(await api.notebookDocuments(openId).catch(() => []))
+    load()
+  }
+
+  async function ask() {
+    if (!openId || !question.trim() || busy) return
+    setBusy('ask')
+    try {
+      setAnswer(await api.askNotebook(openId, question.trim()))
+    } catch (e) {
+      toast.push({ title: 'Could not answer', body: errMsg(e), kind: 'warn' })
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function brief() {
+    if (!openId || busy) return
+    setBusy('brief')
+    try {
+      setScript(await api.notebookBriefing(openId, question.trim()))
+    } catch (e) {
+      toast.push({ title: 'Could not build briefing', body: errMsg(e), kind: 'warn' })
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const inNotebook = new Set(nbDocs.map((d) => d.id))
+
+  return (
+    <div className="card">
+      <div className="cardhead"><span className="label">Archive · Notebooks{notebooks ? ` · ${notebooks.length}` : ''}</span></div>
+      <p className="subnote">Group ingested documents into notebooks, ask questions answered only from them (with citations), or get a two-voice Dexter + Anthony audio briefing.</p>
+      {!online && <p className="subnote">Connect to the backend to use the Archive.</p>}
+      {online && (
+        <div className="set-field">
+          <div className="set-inline">
+            <input className="set-input" placeholder="New notebook title" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') create() }} />
+            <button className="set-btn" disabled={!title.trim()} onClick={create}>Create</button>
+          </div>
+        </div>
+      )}
+      {notebooks?.map((nb) => (
+        <div key={nb.id}>
+          <div className="row">
+            <div className="ic">▤</div>
+            <div className="body"><div className="nm">{nb.title}</div><div className="meta">{nb.document_count} document(s)</div></div>
+            <button className="set-btn" onClick={() => open(nb.id)}>{openId === nb.id ? 'Close' : 'Open'}</button>
+          </div>
+          {openId === nb.id && (
+            <div style={{ paddingLeft: 12 }}>
+              {nbDocs.map((d) => (
+                <div key={d.id} className="row">
+                  <div className="body"><div className="meta">{d.title}</div></div>
+                  <button className="set-btn" onClick={async () => { await api.removeFromNotebook(nb.id, d.id).catch(() => {}); setNbDocs(await api.notebookDocuments(nb.id).catch(() => [])); load() }}>Remove</button>
+                </div>
+              ))}
+              <div className="set-field">
+                <select className="set-input" value="" onChange={(e) => add(e.target.value)}>
+                  <option value="">+ Add an ingested document…</option>
+                  {allDocs.filter((d) => !inNotebook.has(d.id)).map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
+                </select>
+              </div>
+              <div className="set-field">
+                <div className="set-inline">
+                  <input className="set-input" placeholder="Ask this notebook… (or a focus for the briefing)" value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') ask() }} />
+                  <button className="set-btn" disabled={!question.trim() || !!busy} onClick={ask}>{busy === 'ask' ? 'Reading…' : 'Ask'}</button>
+                  <button className="set-btn" disabled={!!busy || nbDocs.length === 0} onClick={brief}>{busy === 'brief' ? 'Writing…' : 'Audio briefing'}</button>
+                </div>
+              </div>
+              {answer && (
+                <div className="row" style={{ display: 'block' }}>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{answer.answer}</p>
+                  {answer.citations.map((c) => (
+                    <p key={c.n} className="subnote">[{c.n}] {c.title} — “{c.excerpt.slice(0, 160)}{c.excerpt.length > 160 ? '…' : ''}”</p>
+                  ))}
+                </div>
+              )}
+              {script && (
+                <div className="row" style={{ display: 'block' }}>
+                  {script.audio_wav_base64
+                    ? <audio controls src={`data:audio/wav;base64,${script.audio_wav_base64}`} style={{ width: '100%' }} />
+                    : <p className="subnote">Voice isn't installed (piper-tts) — here's the script.</p>}
+                  {script.script.map((l, i) => <p key={i}><b>{l.speaker === 'DEXTER' ? 'Dexter' : 'Anthony'}:</b> {l.text}</p>)}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -420,6 +579,7 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
 
           <GuardsCard online={online} />
           <DocumentsCard online={online} />
+          <ArchiveCard online={online} />
 
           {/* ---------- Integrations ---------- */}
           <div className="card">

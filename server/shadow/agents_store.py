@@ -17,6 +17,7 @@ which of those is "the batch" changes with the query).
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from db.connection import get_pool
@@ -51,11 +52,14 @@ async def record_spawn(task: Task, owner_user_id: str | None, business_id: str |
                 (f"agent_{task.id}", task.title[:120], task.status.value, model_route, task.budget_cap, owner_user_id, business_id, task.id),
             )
             await conn.execute(
-                """INSERT INTO task_log (id, title, description, status, protocol, executor_id, budget_cap, spend, created_at, business_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """INSERT INTO task_log (id, title, description, status, protocol, executor_id, budget_cap, spend, created_at,
+                                         business_id, model_route, minutes_saved, revenue_value, metadata)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                    ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status""",
                 (task.id, task.title, task.description, task.status.value, task.protocol.value,
-                 task.executor_id, task.budget_cap, task.spend, task.created_at, business_id),
+                 task.executor_id, task.budget_cap, task.spend, task.created_at, business_id, model_route,
+                 task.metadata.get("minutes_saved"), task.metadata.get("revenue_value"),
+                 json.dumps({k: v for k, v in task.metadata.items() if k in ("tier", "owner_user_id", "resumed_from")})),
             )
     except Exception as e:
         log.warning("Could not persist agent spawn for task %s (continuing without it): %s", task.id, e)
@@ -112,3 +116,57 @@ async def list_agents(business_id: str, limit: int = 50) -> list[dict]:
     for a in agents:
         a["efficiency_normalized"] = round(a["efficiency_score"] / peak, 3) if peak and a["efficiency_score"] is not None else None
     return agents
+
+
+async def take_interrupted() -> list[dict]:
+    """Tasks the last process left queued/running/gated (executors are in-memory, so a restart
+    orphans them). Marks them 'interrupted' — history stays honest — and returns what's needed
+    to re-run each one."""
+    pool = await get_pool()
+    if pool is None:
+        return []
+    try:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """UPDATE task_log SET status = 'interrupted', completed_at = now(),
+                          error = COALESCE(error, 'Server restarted while this task was in flight')
+                   WHERE status IN ('queued', 'running', 'gated')
+                   RETURNING id, title, description, budget_cap, business_id, minutes_saved, revenue_value, metadata"""
+            )
+            rows = await cur.fetchall()
+            await conn.execute(
+                "UPDATE agents SET status = 'interrupted', completed_at = now() WHERE status IN ('queued', 'running', 'gated')"
+            )
+    except Exception as e:
+        log.warning("Could not check for interrupted tasks: %s", e)
+        return []
+    return [
+        {
+            "id": r[0], "title": r[1], "description": r[2] or "", "budget_cap": float(r[3]) if r[3] is not None else None,
+            "business_id": r[4], "minutes_saved": r[5], "revenue_value": float(r[6]) if r[6] is not None else None,
+            "metadata": r[7] or {},
+        }
+        for r in rows
+    ]
+
+
+async def resume_interrupted(app) -> int:
+    """Startup hook: re-spawn each interrupted task as a fresh task linked to the original."""
+    from config import settings
+    from shadow.router import spawn_selected
+
+    rows = await take_interrupted()
+    if not settings.resume_interrupted:
+        return 0
+    for r in rows:
+        meta = r["metadata"]
+        task = Task(
+            title=r["title"], description=r["description"], budget_cap=r["budget_cap"],
+            metadata={
+                "business_id": r["business_id"], "owner_user_id": meta.get("owner_user_id"), "tier": meta.get("tier"),
+                "minutes_saved": r["minutes_saved"], "revenue_value": r["revenue_value"], "resumed_from": r["id"],
+            },
+        )
+        await spawn_selected(app, task, r["business_id"], meta.get("owner_user_id"), meta.get("tier"))
+        log.info("Resumed interrupted task %s as %s", r["id"], task.id)
+    return len(rows)

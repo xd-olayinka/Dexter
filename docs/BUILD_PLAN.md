@@ -77,6 +77,10 @@ Ordered so each step is independently shippable. Frontend and backend halves not
 
 ## Later phases
 
+**Status 2026-09-25:** Phase 4 (team + multi-user, dependency map) is done — see
+`PHASE_3_4_PLAN.md`. Phase 6 Archive v1 is done (notebooks, cited Q&A, two-voice briefing). Phase 3's
+Prometheus integration is live; the third-party integrations below still need OAuth apps.
+
 - **Phase 3 · Integrations (MCP-first).** Wrap Slack / Gmail / GitHub / Calendar / Stripe as MCP
   servers. Tier 1 = servers the brain calls (service credentials, run headless); Tier 2 = the same
   servers configured inside each executor. An inbound event bus (webhooks + pollers) lands outside

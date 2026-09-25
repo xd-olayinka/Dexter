@@ -201,6 +201,52 @@ business a user belongs to. Settings → Account shows a switcher only when ther
 (the common case — one business — never sees it). Off (`DEXTER_REQUIRE_AUTH=false`) 400s the
 switch endpoint rather than pretending, since there's exactly one business in that mode.
 
+## 8 · Closing the PRD's remaining gaps — shipped 2026-09-25
+
+The audit of PRD vs. code found these gaps that need no third-party account. All closed:
+
+- **Selector Core was a keyword classifier + dry-run tester**, and Anthony's executors could only run
+  on Ollama/DeepSeek (Anthropic/OpenAI/Groq were reachable only from the dry run). Now
+  `shadow/selector.py` picks per task: required tier (classifier, or the Commander's explicit tier) →
+  every configured model filtered by availability, tier, tool support, provider caps and budget →
+  ranked by estimated cost ÷ observed success rate, then latency. Models with <50% success over ≥5
+  runs are retired ("fittest survive"). `ModelGateway` runs the tool loop on any provider;
+  `escalation/providers.py` now has tool calling for OpenAI/Groq (shared OpenAI-compatible base) and
+  Anthropic (official SDK, tool_use ↔ Ollama tool_calls, thinking blocks passed back unchanged,
+  refusal handling, server-side refusal fallback on Opus 5 / Fable 5.1). Roster: Claude Haiku 4.5 /
+  Sonnet 5 / Opus 5 (`DEXTER_ANTHROPIC_MODEL`), Fable 5.1 opt-in (`DEXTER_SELECTOR_ALLOW_FABLE`),
+  OpenAI model configurable (`DEXTER_OPENAI_MODEL`, price via `DEXTER_OPENAI_PRICE_IN/OUT`).
+  `POST /api/shadow/selector/preview` shows the pick and every candidate's reason (Selector screen).
+- **Credit ledger was two in-memory trackers** (reset on restart; no monthly budget, per-provider or
+  per-agent cap, or burn alert). Now `ledger.py` + `spend_ledger` table: every executor, chat,
+  briefing and Archive call is costed per business. Guardrails gain `monthly_budget`,
+  `provider_monthly_caps`, `agent_daily_cap`, `burn_rate_alert_per_hour` (Settings → Guardrails);
+  caps are checked **before every model call** (`SelectedBrain`, `_TrackedBrain`), so a tripped cap
+  stops the task mid-run with the reason in its error. Alerts (burn rate, 80%/100% monthly, provider
+  cap) push via ntfy at most hourly. `GET /api/ledger/summary` drives the Burn screen (month vs
+  budget, projection, per-provider bars with caps, alerts).
+- **Home's headline stats were hardcoded** (1,284 tasks / $482K / 312 hrs, a fictional testimonial,
+  a fake ops log, "Slack · GH · Email" channels). With the backend up, `GET /api/metrics/headline`
+  feeds them: tasks terminated from `task_log`; revenue enabled = Σ `revenue_value` tagged when
+  delegating (shown as "—" until something is tagged); hours reclaimed = Σ `minutes_saved` (tasks
+  without one count `DEXTER_DEFAULT_MINUTES_SAVED`, and the tooltip says how many); burn from the
+  ledger. The briefing headline, latest Anthony report and live ops rows replace the showcase copy;
+  offline demo mode keeps it, labeled "demo data".
+- **Runs weren't durable.** Executors are still in-memory, but on startup anything left
+  queued/running/gated is marked `interrupted` in history and re-spawned as a new task linked by
+  `resumed_from` (`DEXTER_RESUME_INTERRUPTED=false` to only mark).
+- **PWA** (PRD open question 3): manifest, icon, and an app-shell service worker (never caches API
+  calls — offline the app falls back to demo mode as before).
+- **Archive v1** (Phase 6): `archive.py` — notebooks group ingested documents; `ask` answers only
+  from the notebook's passages (BM25 retrieval, works without embeddings) with numbered citations;
+  `briefing` writes a DEXTER/ANTHONY two-voice script and synthesizes it with the Orchestrator and
+  Shadow Piper voices when voice is installed (script-only otherwise). Settings → Archive.
+- **Hosting readiness:** `server/Dockerfile` + `docker-compose.yml` (API + pgvector Postgres). Where
+  to host is still a decision, not code.
+- **Prometheus bridge:** Dexter now registers 19 `prometheus_*` tools — the 16 originals plus
+  `prometheus_read_resource` (MCP resources) and `prometheus_my_gate_checks` /
+  `prometheus_report_gate_check`, so Anthony can vote on Prometheus `agent_check`/`consensus` gates.
+
 ## What's intentionally not done this pass
 
 - **Slack/Gmail/GitHub/Stripe integrations (Phase 3 proper).** Each needs an OAuth app registered
@@ -208,8 +254,8 @@ switch endpoint rather than pretending, since there's exactly one business in th
   Cloud OAuth client, a GitHub OAuth App, a Stripe Connect app). I can build the generic
   integration-hub scaffolding once real credentials for at least one exist; building it against
   nothing would be scaffolding for its own sake.
-- **The Archive vault** (Phase 6) — P5's file/URL ingest is its first hook (done in Phase 2);
-  notebooks, citations, and two-voice audio briefings are a distinct product surface.
+- **The Archive vault** (Phase 6) — v1 shipped (§8). Not yet: a dedicated screen (it lives in
+  Settings), embedding-based retrieval, and per-notebook chat history.
 - **Deploying the Dexter backend anywhere but the Commander's own machine.** The frontend deploys
-  to GitHub Pages; the backend has never been pointed at a host other than `localhost` in this
-  environment. "Fully deployed" needs a hosting decision (see the conversation this doc came from).
+  to GitHub Pages; the backend is now containerized (`server/Dockerfile`, `docker-compose.yml`) but
+  has not been deployed to a host. That needs a hosting decision and an account.

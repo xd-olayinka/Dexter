@@ -67,6 +67,15 @@ GET/POST/PATCH/DELETE /api/tasks[/{id}]      tasks CRUD (?when=today|upcoming, ?
 
 GET  /api/briefing/today            model-written morning briefing from real tasks/gates/spend
 
+POST /api/shadow/selector/preview   Selector Core dry run: pick + every candidate's reason
+GET  /api/ledger/summary            credit ledger: today/month/last hour, per provider, limits, alerts
+GET  /api/metrics/headline          Home stats: tasks terminated, hours reclaimed, revenue, spend
+
+GET/POST/DELETE /api/archive/notebooks[/{id}]          Archive notebooks
+POST/DELETE     /api/archive/notebooks/{id}/documents   add/remove a document
+POST /api/archive/notebooks/{id}/ask                    cited Q&A over the notebook
+POST /api/archive/notebooks/{id}/briefing               two-voice script (+ WAV when voice installed)
+
 POST /api/files/upload              multipart upload (pdf/txt/md/csv) → extracted + embedded
 POST /api/files/url                 fetch a URL (plain httpx + HTML strip) → embedded
 GET  /api/files                     list ingested documents

@@ -25,6 +25,12 @@ class _TrackedBrain:
         self._budget = budget
 
     async def chat(self, messages: list[dict], tools: list[dict] | None = None, **kwargs):
+        # Hard caps are checked before every model call, not just before/after the task —
+        # a tripped task/daily budget stops the loop here and the executor logs why.
+        status = self._budget.check_budget()
+        if not status["ok"]:
+            from shadow.selector import CapReached
+            raise CapReached(status["trip_reason"])
         response = await self._brain.chat(
             messages, tools=tools, task_id=self._task.id, **kwargs
         )

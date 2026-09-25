@@ -127,6 +127,7 @@ export interface TaskInfo {
   title: string
   description: string
   status: 'draft' | 'queued' | 'running' | 'gated' | 'done' | 'killed'
+  metadata?: { model_route?: string | null; selection?: Selection; minutes_saved?: number | null; revenue_value?: number | null; resumed_from?: string }
   protocol: string
   executor_id: string | null
   budget_cap: number | null
@@ -287,7 +288,56 @@ export interface GuardConfig {
   high_cost_multiplier: number
   long_running_minutes: number
   custom_rules: GuardRule[]
+  monthly_budget: number
+  provider_monthly_caps: Record<string, number>
+  agent_daily_cap: number | null
+  burn_rate_alert_per_hour: number | null
 }
+
+export interface SelectorCandidate {
+  route: string
+  tier: number
+  est_cost: number
+  success_rate: number
+  runs: number
+  eligible: boolean
+  reason: string
+}
+
+export interface Selection {
+  route: string
+  provider: string
+  model: string
+  tier: number
+  required_tier: number
+  est_cost: number
+  reason: string
+  considered: SelectorCandidate[]
+}
+
+export interface Headline {
+  tasks_terminated: { total: number; last_7d: number }
+  hours_reclaimed: { hours: number; estimated_tasks: number; assumption: string }
+  revenue_enabled: { total: number | null; tagged_tasks: number }
+  model_spend: { today: number; month: number; last_12h: number }
+}
+
+export interface LedgerAlert { at: string; kind: string; title: string; body: string }
+
+export interface LedgerSummary {
+  totals: {
+    today: number; month: number; last_hour: number; last_12h: number
+    by_provider_today: Record<string, number>; by_provider_month: Record<string, number>; by_model_month: Record<string, number>
+  }
+  limits: Pick<GuardConfig, 'daily_budget' | 'monthly_budget' | 'provider_monthly_caps' | 'agent_daily_cap' | 'burn_rate_alert_per_hour'>
+  projected_month: number | null
+  alerts: LedgerAlert[]
+}
+
+export interface Notebook { id: string; title: string; document_count: number }
+export interface ArchiveCitation { n: number; document_id: string; title: string; passage: number; excerpt: string }
+export interface ArchiveAnswer { answer: string; citations: ArchiveCitation[]; model: string | null }
+export interface BriefingScript { script: Array<{ speaker: 'DEXTER' | 'ANTHONY'; text: string }>; audio_wav_base64: string | null; voice_available: boolean }
 
 export interface AgentRecord {
   id: string
@@ -334,11 +384,29 @@ export const api = {
     }),
   testGate: () => request<Gate>('/api/shadow/gates/test', { method: 'POST' }),
 
-  delegate: (title: string, description = '', budgetCap?: number) =>
+  delegate: (title: string, description = '', budgetCap?: number, extra: { tier?: number; minutes_saved?: number; revenue_value?: number } = {}) =>
     request<TaskInfo>('/api/shadow/delegate', {
       method: 'POST',
-      body: JSON.stringify({ title, description, budget_cap: budgetCap ?? null }),
-    }),
+      body: JSON.stringify({ title, description, budget_cap: budgetCap ?? null, ...extra }),
+    }, 15000),
+  selectorPreview: (title: string, description = '', tier?: number) =>
+    request<Selection | { route: null; reason: string }>('/api/shadow/selector/preview', {
+      method: 'POST', body: JSON.stringify({ title, description, tier: tier ?? null }),
+    }, 10000),
+  headline: () => request<Headline>('/api/metrics/headline', undefined, 8000),
+  ledger: () => request<LedgerSummary>('/api/ledger/summary', undefined, 8000),
+  notebooks: () => request<Notebook[]>('/api/archive/notebooks'),
+  createNotebook: (title: string) => request<Notebook>('/api/archive/notebooks', { method: 'POST', body: JSON.stringify({ title }) }),
+  deleteNotebook: (id: string) => request<void>(`/api/archive/notebooks/${id}`, { method: 'DELETE' }),
+  notebookDocuments: (id: string) => request<Array<{ id: string; title: string; origin: string; char_count: number }>>(`/api/archive/notebooks/${id}/documents`),
+  addToNotebook: (id: string, documentId: string) =>
+    request<void>(`/api/archive/notebooks/${id}/documents`, { method: 'POST', body: JSON.stringify({ document_id: documentId }) }),
+  removeFromNotebook: (id: string, documentId: string) =>
+    request<void>(`/api/archive/notebooks/${id}/documents/${documentId}`, { method: 'DELETE' }),
+  askNotebook: (id: string, question: string) =>
+    request<ArchiveAnswer>(`/api/archive/notebooks/${id}/ask`, { method: 'POST', body: JSON.stringify({ question }) }, 90000),
+  notebookBriefing: (id: string, topic = '') =>
+    request<BriefingScript>(`/api/archive/notebooks/${id}/briefing`, { method: 'POST', body: JSON.stringify({ topic, audio: true }) }, 180000),
   tasks: () => request<TaskInfo[]>('/api/shadow/tasks'),
   killTask: (taskId: string) =>
     request<TaskInfo>(`/api/shadow/tasks/${taskId}/kill`, { method: 'POST' }),

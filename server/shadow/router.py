@@ -49,6 +49,9 @@ class DelegateRequest(BaseModel):
     title: str
     description: str = ""
     budget_cap: float | None = None
+    tier: int | None = None            # 1 fast · 2 standard · 3 frontier — overrides the classifier
+    minutes_saved: int | None = None   # Commander's estimate of human time this saves (Home: hours reclaimed)
+    revenue_value: float | None = None  # revenue this task enables, if any (Home: revenue enabled)
 
 
 class RejectRequest(BaseModel):
@@ -63,19 +66,55 @@ async def delegate_task(req: DelegateRequest, request: Request, ctx: CurrentCont
         title=req.title,
         description=req.description,
         budget_cap=req.budget_cap or config.per_task_budget_default,
-        metadata={"business_id": ctx.business_id},
+        metadata={
+            "business_id": ctx.business_id, "owner_user_id": ctx.user_id, "tier": req.tier,
+            "minutes_saved": req.minutes_saved, "revenue_value": req.revenue_value,
+        },
     )
+    await spawn_selected(request.app, task, ctx.business_id, ctx.user_id, req.tier)
+    return task.model_dump(mode="json")
+
+
+async def spawn_selected(app, task: Task, business_id: str | None, owner_user_id: str | None, tier: int | None = None) -> None:
+    """Selector Core picks the cheapest capable model; the task's tool loop runs on it.
+    Falls back to the Brain (Ollama/DeepSeek/stub) only when the Selector has no candidate."""
+    from shadow.selector import SelectedBrain, select
+    from shadow.work import make_llm_work_fn
+
     work_fn = None
     model_route = None
-    brain = getattr(request.app.state, "brain", None)
-    if brain is not None:
-        active = await brain.describe()
-        if active["ready"]:
-            from shadow.work import make_llm_work_fn
-            work_fn = make_llm_work_fn(brain)
-            model_route = f"{active['provider']}:{active['model']}"
-    task_id = await mgr.spawn(task, work_fn=work_fn, owner_user_id=ctx.user_id, business_id=ctx.business_id, model_route=model_route)
-    return task.model_dump(mode="json")
+    gateway = getattr(app.state, "gateway", None)
+    selection = await select(gateway, f"{task.title} {task.description}", business_id, tier) if gateway else None
+    if selection is not None:
+        work_fn = make_llm_work_fn(SelectedBrain(gateway, selection, business_id, agent_id=f"agent_{task.id}"))
+        model_route = selection.route
+        task.metadata["selection"] = selection.as_dict()
+    else:
+        brain = getattr(app.state, "brain", None)
+        if brain is not None:
+            active = await brain.describe()
+            if active["ready"]:
+                work_fn = make_llm_work_fn(brain)
+                model_route = f"{active['provider']}:{active['model']}"
+    task.metadata["model_route"] = model_route
+    await get_manager().spawn(task, work_fn=work_fn, owner_user_id=owner_user_id, business_id=business_id, model_route=model_route)
+
+
+class SelectorPreview(BaseModel):
+    title: str
+    description: str = ""
+    tier: int | None = None
+
+
+@router.post("/selector/preview")
+async def selector_preview(req: SelectorPreview, request: Request, ctx: CurrentContext = Depends(current_context)):
+    """Dry run of Selector Core — which model a task like this would get, and why every
+    other candidate was or wasn't eligible. No model is called."""
+    from shadow.selector import select
+
+    gateway = getattr(request.app.state, "gateway", None)
+    selection = await select(gateway, f"{req.title} {req.description}", ctx.business_id, req.tier) if gateway else None
+    return selection.as_dict() if selection else {"route": None, "reason": "No model available — configure a provider or start Ollama"}
 
 
 @router.get("/agents")
@@ -193,6 +232,10 @@ class GuardPatch(BaseModel):
     per_task_budget_default: float | None = None
     high_cost_multiplier: float | None = None
     long_running_minutes: int | None = None
+    monthly_budget: float | None = None
+    provider_monthly_caps: dict[str, float] | None = None
+    agent_daily_cap: float | None = None          # send null explicitly to remove the cap
+    burn_rate_alert_per_hour: float | None = None  # send null explicitly to turn alerts off
 
 
 class RuleIn(BaseModel):

@@ -72,6 +72,30 @@ class PrometheusMCP:
             raise PrometheusMCPError(message or "Prometheus tool call failed")
         return parsed
 
+    async def read_resource(self, uri: str) -> str:
+        """MCP resources/read — Prometheus's token-lean Markdown views (issue, project brief,
+        team board, workspace context), scoped to the token's member."""
+        self._next_id += 1
+        body = {"jsonrpc": "2.0", "id": self._next_id, "method": "resources/read", "params": {"uri": uri}}
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(self.url, json=body, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPError as e:
+            raise PrometheusMCPError(f"Prometheus MCP unreachable: {e}") from e
+        if "error" in data:
+            raise PrometheusMCPError(data["error"].get("message", "Prometheus resource read failed"))
+        contents = data.get("result", {}).get("contents") or []
+        return "\n\n".join(c.get("text", "") for c in contents)
+
+    async def my_gate_checks(self) -> dict:
+        return await self._call("my_gate_checks", {})
+
+    async def report_gate_check(self, proposal_id: str, gate_id: str, verdict: str, detail: str | None = None) -> dict:
+        return await self._call("report_gate_check", {"proposalId": proposal_id, "gateId": gate_id, "verdict": verdict, "detail": detail})
+
     async def health(self, timeout: float | None = None) -> bool:
         original = self.timeout
         if timeout is not None:

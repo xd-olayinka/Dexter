@@ -89,7 +89,7 @@ async def briefing_today(request: Request, refresh: bool = False, ctx: CurrentCo
                 f"- Spend today: ${spend_today:.2f}\n"
                 "Reply with just the sentence, no preamble, no quotes."
             )
-            response = await brain.chat([{"role": "user", "content": prompt}])
+            response = await brain.chat([{"role": "user", "content": prompt}], business_id=ctx.business_id, source="briefing")
             text = (response.get("message", {}).get("content") or "").strip()
             if text:
                 headline = text

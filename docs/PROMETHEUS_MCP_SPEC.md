@@ -17,9 +17,12 @@
 >   Source of truth: `inputSchema` in Prometheus `apps/web/convex/mcp/router.ts`.
 > - **Transport:** Prometheus implements HTTP JSON-RPC only (Convex HTTP action). No stdio sidecar.
 > - **Client module** lives at `server/integrations/prometheus_mcp.py` (not `server/mcp/prometheus.py`).
-> - **All 16 tools** in §2.1–2.2 exist on both sides (Prometheus router + tests; Dexter registers
->   16 `prometheus_*` tools when `DEXTER_PROMETHEUS_MCP_URL`/`_TOKEN` are set).
-> - **§2.3 MCP resources (`prometheus://…`) are not built** on the Prometheus side.
+> - **All 16 tools** in §2.1–2.2 exist on both sides, plus two added 2026-09-25 for automated gates:
+>   `my_gate_checks` / `report_gate_check` (Anthony votes on Prometheus `agent_check`/`consensus`).
+>   Dexter registers 19 `prometheus_*` tools when `DEXTER_PROMETHEUS_MCP_URL`/`_TOKEN` are set.
+> - **§2.3 MCP resources are built** (Prometheus `mcp/resources.ts`): `workspace/context.md`,
+>   `issue/{identifier}.md`, `project/{id}/brief.md`, `team/{key}/board.md` via `resources/read`;
+>   Dexter reads them with `prometheus_read_resource`.
 
 ---
 

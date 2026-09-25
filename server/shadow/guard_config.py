@@ -36,6 +36,14 @@ class GuardConfig(BaseModel):
     high_cost_multiplier: float = 2.0
     long_running_minutes: int = 30
     custom_rules: list[CustomRule] = []
+    # Credit ledger limits (PRD §5.5) — enforced from the persistent spend ledger (ledger.py)
+    monthly_budget: float = settings.monthly_budget
+    provider_monthly_caps: dict[str, float] = {}   # e.g. {"anthropic": 40} — provider skipped by the Selector once hit
+    agent_daily_cap: float | None = None           # one executor agent's spend per day; tripping it kills the task
+    burn_rate_alert_per_hour: float | None = 1.0   # alert (phone push) when the last hour's spend exceeds this
+
+
+LIMIT_FIELDS = ("monthly_budget", "provider_monthly_caps", "agent_daily_cap", "burn_rate_alert_per_hour")
 
 
 class GuardConfigStore:
@@ -63,7 +71,7 @@ class GuardConfigStore:
             async with pool.connection() as conn:
                 cur = await conn.execute(
                     """SELECT daily_budget, per_task_budget_default, high_cost_multiplier,
-                              long_running_minutes, custom_rules FROM guard_config WHERE id = 1"""
+                              long_running_minutes, custom_rules, limits FROM guard_config WHERE id = 1"""
                 )
                 row = await cur.fetchone()
             if row:
@@ -71,6 +79,7 @@ class GuardConfigStore:
                     daily_budget=float(row[0]), per_task_budget_default=float(row[1]),
                     high_cost_multiplier=float(row[2]), long_running_minutes=row[3],
                     custom_rules=[CustomRule(**r) for r in (row[4] or [])],
+                    **{k: v for k, v in (row[5] or {}).items() if k in LIMIT_FIELDS},
                 )
         except Exception as e:
             log.warning("Could not load guard config from database, using defaults: %s", e)
@@ -83,19 +92,21 @@ class GuardConfigStore:
             async with pool.connection() as conn:
                 await conn.execute(
                     """INSERT INTO guard_config (id, daily_budget, per_task_budget_default,
-                            high_cost_multiplier, long_running_minutes, custom_rules)
-                       VALUES (1, %s, %s, %s, %s, %s::jsonb)
+                            high_cost_multiplier, long_running_minutes, custom_rules, limits)
+                       VALUES (1, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
                        ON CONFLICT (id) DO UPDATE SET
                             daily_budget = EXCLUDED.daily_budget,
                             per_task_budget_default = EXCLUDED.per_task_budget_default,
                             high_cost_multiplier = EXCLUDED.high_cost_multiplier,
                             long_running_minutes = EXCLUDED.long_running_minutes,
                             custom_rules = EXCLUDED.custom_rules,
+                            limits = EXCLUDED.limits,
                             updated_at = now()""",
                     (
                         self._config.daily_budget, self._config.per_task_budget_default,
                         self._config.high_cost_multiplier, self._config.long_running_minutes,
                         json.dumps([r.model_dump() for r in self._config.custom_rules]),
+                        json.dumps({k: getattr(self._config, k) for k in LIMIT_FIELDS}),
                     ),
                 )
         except Exception as e:
@@ -103,7 +114,9 @@ class GuardConfigStore:
 
     async def update(self, patch: dict) -> GuardConfig:
         await self.get()  # ensure loaded first, so a patch doesn't clobber a DB-loaded value with defaults
-        self._config = self._config.model_copy(update={k: v for k, v in patch.items() if v is not None})
+        # None means "leave as is" — except for the two optional limits, where an explicit null clears them
+        clearable = {"agent_daily_cap", "burn_rate_alert_per_hour"}
+        self._config = self._config.model_copy(update={k: v for k, v in patch.items() if v is not None or k in clearable})
         await self._persist()
         return self._config
 

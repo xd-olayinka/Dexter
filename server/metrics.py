@@ -115,3 +115,63 @@ async def metrics_summary(ctx: CurrentContext = Depends(current_context)) -> dic
         "activity": {"active_sessions_7d": active_sessions, "approvals_7d": approvals_7d},
         "targets": {"time_to_completion_minutes": TARGET_TIME_TO_COMPLETION_MIN, "without_intervention_pct": TARGET_WITHOUT_INTERVENTION_PCT},
     }
+
+
+@router.get("/headline")
+async def metrics_headline(ctx: CurrentContext = Depends(current_context)) -> dict:
+    """Home's four headline stats (PRD §5.2), all from real rows:
+    tasks terminated = completed tasks; hours reclaimed = Σ minutes_saved the Commander gave
+    when delegating (tasks without one count `default_minutes_saved`, and the response says how
+    many); revenue enabled = Σ revenue_value tagged on completed tasks (null when none are);
+    model spend = the credit ledger."""
+    import ledger
+    from config import settings
+
+    spend = await ledger.totals(ctx.business_id)
+    done_all = done_7d = defaulted = tagged = 0
+    minutes = 0
+    revenue = 0.0
+    pool = await get_pool()
+    rows: list[tuple] = []
+    if pool is not None:
+        try:
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    """SELECT completed_at, minutes_saved, revenue_value FROM task_log
+                       WHERE business_id = %s AND status = 'done'""",
+                    (ctx.business_id,),
+                )
+                rows = await cur.fetchall()
+        except Exception as e:
+            log.warning("headline query failed: %s", e)
+            pool = None
+    if pool is None:
+        from shadow.router import get_manager
+        rows = [
+            (t.completed_at, t.metadata.get("minutes_saved"), t.metadata.get("revenue_value"))
+            for t in get_manager().list_all()
+            if t.metadata.get("business_id") == ctx.business_id and t.status.value == "done"
+        ]
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    for completed_at, mins, rev in rows:
+        done_all += 1
+        if completed_at and completed_at > week_ago:
+            done_7d += 1
+        if mins is None:
+            defaulted += 1
+            minutes += settings.default_minutes_saved
+        else:
+            minutes += int(mins)
+        if rev is not None:
+            tagged += 1
+            revenue += float(rev)
+    return {
+        "tasks_terminated": {"total": done_all, "last_7d": done_7d},
+        "hours_reclaimed": {
+            "hours": round(minutes / 60, 1),
+            "estimated_tasks": defaulted,
+            "assumption": f"{settings.default_minutes_saved} min per task without its own estimate",
+        },
+        "revenue_enabled": {"total": round(revenue, 2) if tagged else None, "tagged_tasks": tagged},
+        "model_spend": {"today": round(spend.today, 4), "month": round(spend.month, 4), "last_12h": round(spend.last_12h, 4)},
+    }

@@ -100,6 +100,22 @@ async def prometheus_comment_issue(issue_id: str, body: str) -> str:
     return await _wrap(_client_or_raise().comment_issue(issue_id, body))
 
 
+async def prometheus_read_resource(uri: str) -> str:
+    try:
+        return await _client_or_raise().read_resource(uri)
+    except Exception as e:
+        log.warning("Prometheus resource read failed: %s", e)
+        return f"Prometheus error: {e}"
+
+
+async def prometheus_my_gate_checks() -> str:
+    return await _wrap(_client_or_raise().my_gate_checks())
+
+
+async def prometheus_report_gate_check(proposal_id: str, gate_id: str, verdict: str, detail: str = None) -> str:
+    return await _wrap(_client_or_raise().report_gate_check(proposal_id, gate_id, verdict, detail=detail))
+
+
 async def prometheus_create_issue(team_id: str, title: str, description: str = None) -> str:
     return await _wrap(_client_or_raise().create_issue(team_id, title, description=description))
 
@@ -213,4 +229,28 @@ if _client is not None:
         description="Attach a PR/commit/branch/deploy link to a Prometheus issue",
         parameters={"issue_id": {"type": "string"}, "kind": {"type": "string"}, "ref": {"type": "string"}, "url": {"type": "string", "default": None}},
         handler=prometheus_attach_artifact,
+    ))
+    registry.register(Tool(
+        name="prometheus_read_resource",
+        description=(
+            "Read a Prometheus resource as Markdown: prometheus://workspace/context.md, "
+            "prometheus://issue/{identifier}.md, prometheus://project/{id}/brief.md, prometheus://team/{key}/board.md"
+        ),
+        parameters={"uri": {"type": "string"}},
+        handler=prometheus_read_resource,
+    ))
+    registry.register(Tool(
+        name="prometheus_my_gate_checks",
+        description="List Prometheus gate checks (agent_check / consensus) waiting on this connection's verdict",
+        parameters={},
+        handler=prometheus_my_gate_checks,
+    ))
+    registry.register(Tool(
+        name="prometheus_report_gate_check",
+        description="Report a pass/fail verdict on a Prometheus gate check, with the evidence",
+        parameters={
+            "proposal_id": {"type": "string"}, "gate_id": {"type": "string"},
+            "verdict": {"type": "string", "enum": ["pass", "fail"]}, "detail": {"type": "string", "default": None},
+        },
+        handler=prometheus_report_gate_check,
     ))

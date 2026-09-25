@@ -206,3 +206,38 @@ CREATE TABLE IF NOT EXISTS agent_tool_calls (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_agent_tool_calls_task ON agent_tool_calls(task_id);
+
+-- ── Credit ledger (PRD §5.5) ──────────────────────────────────────────
+-- Every model call's cost, persisted (the in-memory trackers reset on restart, so a monthly
+-- budget or per-provider cap was impossible). ledger.py owns reads/writes.
+CREATE TABLE IF NOT EXISTS spend_ledger (
+    id BIGSERIAL PRIMARY KEY,
+    ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+    business_id TEXT,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INT NOT NULL DEFAULT 0,
+    output_tokens INT NOT NULL DEFAULT 0,
+    cost_usd NUMERIC NOT NULL DEFAULT 0,
+    task_id TEXT,
+    agent_id TEXT,
+    source TEXT NOT NULL DEFAULT 'executor'   -- 'executor' | 'chat' | 'briefing' | 'archive'
+);
+CREATE INDEX IF NOT EXISTS idx_spend_ledger_business_ts ON spend_ledger(business_id, ts);
+ALTER TABLE guard_config ADD COLUMN IF NOT EXISTS limits JSONB NOT NULL DEFAULT '{}';
+
+-- ── Home headline stats (PRD §5.2) ─────────────────────────────────────
+-- Optional per-task attribution the Commander gives when delegating; revenue and hours are
+-- only ever summed from these, never invented.
+ALTER TABLE task_log ADD COLUMN IF NOT EXISTS minutes_saved INT;
+ALTER TABLE task_log ADD COLUMN IF NOT EXISTS revenue_value NUMERIC;
+ALTER TABLE task_log ADD COLUMN IF NOT EXISTS model_route TEXT;
+
+-- ── Archive v1 (Phase 6) ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS notebooks (
+    id TEXT PRIMARY KEY,
+    business_id TEXT,
+    title TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS notebook_id TEXT;

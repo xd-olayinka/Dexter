@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { RUN_LOG, GATES, SWARM, MODEL_POOL, PICKS, BURN, GUARDS } from '../data'
 import operative from '../assets/img/operative.png'
-import { api, ApiError, type AgentRecord, type GuardConfig, type ModelRoute, type SpendReport, type TaskInfo } from '../lib/api'
+import { api, ApiError, type AgentRecord, type GuardConfig, type LedgerSummary, type Selection, type TaskInfo } from '../lib/api'
 import { useBackend } from '../lib/backend'
 import { useToast } from '../lib/toast'
 
@@ -20,6 +20,9 @@ export function ShadowOps() {
   const { online, gates, budget, refreshGates } = useBackend()
   const toast = useToast()
   const [cmd, setCmd] = useState('')
+  const [tier, setTier] = useState('')
+  const [minutes, setMinutes] = useState('')
+  const [revenue, setRevenue] = useState('')
   const [tasks, setTasks] = useState<TaskInfo[]>([])
   const mountedRef = useRef(true)
 
@@ -52,9 +55,16 @@ export function ShadowOps() {
       return
     }
     try {
-      await api.delegate(text)
-      toast.push({ title: 'Executor spawned', body: text, kind: 'good' })
+      const spawned = await api.delegate(text, '', undefined, {
+        tier: tier ? Number(tier) : undefined,
+        minutes_saved: minutes ? Number(minutes) : undefined,
+        revenue_value: revenue ? Number(revenue) : undefined,
+      })
+      const route = spawned.metadata?.model_route
+      toast.push({ title: 'Executor spawned', body: route ? `${text} → ${route}` : text, kind: 'good' })
       setCmd('')
+      setMinutes('')
+      setRevenue('')
       loadTasks()
     } catch {
       toast.push({ title: 'Spawn failed', body: 'Anthony did not respond', kind: 'warn' })
@@ -109,21 +119,48 @@ export function ShadowOps() {
             onKeyDown={(e) => { if (e.key === 'Enter') spawn() }}
           />
         </div>
-        <div className="pillrow" style={{ paddingTop: 8 }}>
+        <div className="pillrow" style={{ paddingTop: 8, gap: 6, flexWrap: 'wrap' }}>
+          <select className="set-input" style={{ width: 'auto' }} value={tier} onChange={(e) => setTier(e.target.value)} title="Capability tier — leave on auto to let the Selector decide">
+            <option value="">Tier · auto</option>
+            <option value="1">Tier 1 · fast</option>
+            <option value="2">Tier 2 · standard</option>
+            <option value="3">Tier 3 · frontier</option>
+          </select>
+          <input className="set-input" style={{ width: 120 }} type="number" min="0" placeholder="min saved" value={minutes} onChange={(e) => setMinutes(e.target.value)} title="Your estimate of human minutes this saves (Home: hours reclaimed)" />
+          <input className="set-input" style={{ width: 120 }} type="number" min="0" placeholder="revenue $" value={revenue} onChange={(e) => setRevenue(e.target.value)} title="Revenue this enables, if any (Home: revenue enabled)" />
           <button className="p" onClick={spawn}>⬢ Spawn</button>
         </div>
       </div>
       <div className="eyebrow">Ops Feed · Encrypted</div>
-      <h1 className="bigtitle">
-        <em>Anthony</em> ran all night. <span className="hl">5 executors</span>,{' '}
-        <span className="hl">1 guard trip</span>, zero escalations.
-      </h1>
-      <div className="chiprow">
-        <div className="chip"><span className="dot" />4 live</div>
-        <div className="chip">1 queued</div>
-        <div className="chip"><span className="dot warn" />1 killed</div>
-        <div className="chip">$14.20 burn</div>
-      </div>
+      {online ? (
+        <>
+          <h1 className="bigtitle">
+            <em>Anthony</em> · <span className="hl">{tasks.filter((t) => t.status === 'running').length} running</span>,{' '}
+            <span className="hl">{tasks.filter((t) => t.status === 'killed').length} killed</span>,{' '}
+            {tasks.filter((t) => t.status === 'gated').length} awaiting approval.
+          </h1>
+          <div className="chiprow">
+            <div className="chip"><span className="dot" />{tasks.filter((t) => t.status === 'running').length} live</div>
+            <div className="chip">{tasks.filter((t) => t.status === 'queued').length} queued</div>
+            <div className="chip"><span className="dot warn" />{tasks.filter((t) => t.status === 'killed').length} killed</div>
+            <div className="chip">${tasks.reduce((n, t) => n + t.spend, 0).toFixed(2)} burn</div>
+          </div>
+        </>
+      ) : (
+        <>
+          <h1 className="bigtitle">
+            <em>Anthony</em> ran all night. <span className="hl">5 executors</span>,{' '}
+            <span className="hl">1 guard trip</span>, zero escalations.
+          </h1>
+          <div className="chiprow">
+            <div className="chip"><span className="dot" />4 live</div>
+            <div className="chip">1 queued</div>
+            <div className="chip"><span className="dot warn" />1 killed</div>
+            <div className="chip">$14.20 burn</div>
+            <div className="chip">demo data</div>
+          </div>
+        </>
+      )}
       <div className="heromini mobile-only">
         <img src={operative} alt="Dexter" />
         <div className="tick tl" /><div className="tick tr" />
@@ -153,7 +190,7 @@ export function ShadowOps() {
               <div key={t.id} className="task">
                 <div className="body">
                   <div className="nm">{t.title}</div>
-                  <div className="meta">${t.spend.toFixed(2)} spent{t.budget_cap != null ? ` · cap $${t.budget_cap.toFixed(2)}` : ''}</div>
+                  <div className="meta">${t.spend.toFixed(4)} spent{t.budget_cap != null ? ` · cap $${t.budget_cap.toFixed(2)}` : ''}{t.metadata?.model_route ? ` · ${t.metadata.model_route}` : ''}{t.error ? ` · ${t.error}` : ''}</div>
                 </div>
                 <span className={`badge ${statusBadgeCls(t.status)}`}>{t.status}</span>
                 {!terminal && <button className="del" onClick={() => kill(t.id)}>Kill</button>}
@@ -315,13 +352,16 @@ export function Selector() {
   const toast = useToast()
   const [providers, setProviders] = useState<ProviderInfo[] | null>(null)
   const [msg, setMsg] = useState('')
-  const [route, setRoute] = useState<ModelRoute | null>(null)
+  const [pick, setPick] = useState<Selection | null>(null)
+  const [pickNote, setPickNote] = useState('')
   const [routing, setRouting] = useState(false)
+  const [recent, setRecent] = useState<TaskInfo[]>([])
 
   useEffect(() => {
     if (!online) { setProviders(null); return }
     let cancelled = false
     api.providers().then((r) => { if (!cancelled) setProviders(r.providers) }).catch(() => { if (!cancelled) setProviders(null) })
+    api.tasks().then((t) => { if (!cancelled) setRecent(t.filter((x) => x.metadata?.selection).slice(-3).reverse()) }).catch(() => {})
     return () => { cancelled = true }
   }, [online])
 
@@ -330,7 +370,8 @@ export function Selector() {
     if (!v || routing) return
     setRouting(true)
     try {
-      setRoute(await api.routeDryRun(v))
+      const r = await api.selectorPreview(v)
+      if (r.route) { setPick(r as Selection); setPickNote('') } else { setPick(null); setPickNote(r.reason) }
     } catch (e) {
       toast.push({ title: 'Dry run failed', body: errMsg(e), kind: 'warn' })
     } finally {
@@ -363,25 +404,40 @@ export function Selector() {
       </div>
       {usingLive ? (
         <div className="card tint">
-          <div className="cardhead"><span className="label">Try the Router</span></div>
+          <div className="cardhead"><span className="label">Try the Selector · dry run</span></div>
           <div className="chatinput" style={{ paddingTop: 0 }}>
             <input
               type="text"
-              placeholder="A sample message to route…"
+              placeholder="Describe a task — which model would Anthony use?"
               value={msg}
               onChange={(e) => setMsg(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') tryRoute() }}
             />
-            <button className="send" aria-label="Route" onClick={tryRoute} disabled={routing}>↑</button>
+            <button className="send" aria-label="Select" onClick={tryRoute} disabled={routing}>↑</button>
           </div>
-          {route && (
-            <div className="row" style={{ marginTop: 8 }}>
-              <div className="ic">→</div>
-              <div className="body">
-                <div className="nm">{route.level} · {route.provider} · {route.model}</div>
-                <div className="meta">{route.reason}</div>
+          {pickNote && <div className="row"><div className="body"><div className="meta">{pickNote}</div></div></div>}
+          {pick && (
+            <>
+              <div className="row" style={{ marginTop: 8 }}>
+                <div className="ic">→</div>
+                <div className="body">
+                  <div className="nm">{pick.route} <span className="badge grn">tier {pick.tier}</span></div>
+                  <div className="meta">{pick.reason}</div>
+                </div>
               </div>
-            </div>
+              {pick.considered.map((c) => (
+                <div key={c.route} className="row">
+                  <div className="ic">{c.route === pick.route ? '✓' : c.eligible ? '·' : '✕'}</div>
+                  <div className="body">
+                    <div className="nm">{c.route} · tier {c.tier}</div>
+                    <div className="meta">
+                      est ${c.est_cost.toFixed(4)} · {c.runs ? `${Math.round(c.success_rate * 100)}% over ${c.runs} runs` : 'untried'}
+                      {c.reason ? ` · ${c.reason}` : ''}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
           )}
         </div>
       ) : (
@@ -395,24 +451,38 @@ export function Selector() {
           ))}
         </div>
       )}
-      <div className="card">
-        <div className="cardhead"><span className="label">Spawn Templates</span><button className="more">+ Force Spawn</button></div>
-        <div className="row"><div className="ic">⬢</div><div className="body"><div className="nm">Scraper · Parser · Mailer</div><div className="meta">Bulk ops family, Haiku default</div></div></div>
-        <div className="row"><div className="ic">⬡</div><div className="body"><div className="nm">Coder · Researcher · Voice</div><div className="meta">Skilled family, Fable default with escalation</div></div></div>
-      </div>
+      {usingLive ? (
+        <div className="card">
+          <div className="cardhead"><span className="label">Last {recent.length || ''} Picks · Explained</span></div>
+          {recent.length === 0 ? (
+            <div className="row"><div className="body"><div className="meta">No tasks delegated this session yet.</div></div></div>
+          ) : recent.map((t) => (
+            <div key={t.id} className="row">
+              <div className="ic">→</div>
+              <div className="body"><div className="nm">{t.title} → {t.metadata!.selection!.route}</div><div className="meta">{t.metadata!.selection!.reason}</div></div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="card">
+          <div className="cardhead"><span className="label">Spawn Templates · demo</span><button className="more">+ Force Spawn</button></div>
+          <div className="row"><div className="ic">⬢</div><div className="body"><div className="nm">Scraper · Parser · Mailer</div><div className="meta">Bulk ops family, Haiku default</div></div></div>
+          <div className="row"><div className="ic">⬡</div><div className="body"><div className="nm">Coder · Researcher · Voice</div><div className="meta">Skilled family, Fable default with escalation</div></div></div>
+        </div>
+      )}
     </div>
   )
 }
 
 export function Credits() {
   const { online } = useBackend()
-  const [spend, setSpend] = useState<SpendReport | null>(null)
+  const [spend, setSpend] = useState<LedgerSummary | null>(null)
   const [guards, setGuards] = useState<GuardConfig | null>(null)
 
   useEffect(() => {
     if (!online) { setSpend(null); setGuards(null); return }
     let cancelled = false
-    api.spend().then((s) => { if (!cancelled) setSpend(s) }).catch(() => { if (!cancelled) setSpend(null) })
+    api.ledger().then((s) => { if (!cancelled) setSpend(s) }).catch(() => { if (!cancelled) setSpend(null) })
     api.guardConfig().then((g) => { if (!cancelled) setGuards(g) }).catch(() => { if (!cancelled) setGuards(null) })
     return () => { cancelled = true }
   }, [online])
@@ -425,20 +495,45 @@ export function Credits() {
       <p className="subnote lead">Live spend across providers. Caps are hard, kills are automatic.</p>
       <div className="card">
         <div className="cardhead">
-          <span className="label">{usingLive ? `Today's Burn · $${spend!.total_today.toFixed(2)}` : 'July Burn · $1,928'}</span>
+          <span className="label">{usingLive ? `This Month · $${spend!.totals.month.toFixed(2)} / $${spend!.limits.monthly_budget.toFixed(2)}` : 'July Burn · $1,928'}</span>
         </div>
         {usingLive ? (
-          Object.keys(spend!.by_provider).length === 0 ? (
-            <div className="row"><div className="body"><div className="meta">No spend yet today.</div></div></div>
-          ) : Object.entries(spend!.by_provider).map(([name, amt]) => {
-            const pct = spend!.total_today > 0 ? Math.min(100, (amt / spend!.total_today) * 100) : 0
-            return (
-              <div key={name} className="bar">
-                <div className="lbl"><b>{name}</b><span>${amt.toFixed(2)}</span></div>
-                <div className="track"><div className={`fill${pct > 80 ? ' hot' : ''}`} style={{ width: `${pct}%` }} /></div>
+          <>
+            {(() => {
+              const pct = spend!.limits.monthly_budget > 0 ? Math.min(100, (spend!.totals.month / spend!.limits.monthly_budget) * 100) : 0
+              return (
+                <div className="bar">
+                  <div className="lbl">
+                    <b>Monthly budget</b>
+                    <span>
+                      {Math.round(pct)}% · today ${spend!.totals.today.toFixed(2)} · last hour ${spend!.totals.last_hour.toFixed(2)}
+                      {spend!.projected_month != null ? ` · projected $${spend!.projected_month.toFixed(2)}` : ''}
+                    </span>
+                  </div>
+                  <div className="track"><div className={`fill${pct > 80 ? ' hot' : ''}`} style={{ width: `${pct}%` }} /></div>
+                </div>
+              )
+            })()}
+            {Object.keys(spend!.totals.by_provider_month).length === 0 ? (
+              <div className="row"><div className="body"><div className="meta">No spend yet this month.</div></div></div>
+            ) : Object.entries(spend!.totals.by_provider_month).map(([name, amt]) => {
+              const cap = spend!.limits.provider_monthly_caps[name]
+              const base = cap ?? spend!.totals.month
+              const pct = base > 0 ? Math.min(100, (amt / base) * 100) : 0
+              return (
+                <div key={name} className="bar">
+                  <div className="lbl"><b>{name}</b><span>${amt.toFixed(2)}{cap != null ? ` / $${cap.toFixed(2)} cap` : ''}</span></div>
+                  <div className="track"><div className={`fill${cap != null && pct > 80 ? ' hot' : ''}`} style={{ width: `${pct}%` }} /></div>
+                </div>
+              )
+            })}
+            {spend!.alerts.map((a) => (
+              <div key={a.at + a.kind} className="row">
+                <div className="ic">!</div>
+                <div className="body"><div className="nm">{a.title}</div><div className="meta">{a.body} · {new Date(a.at).toLocaleString()}</div></div>
               </div>
-            )
-          })
+            ))}
+          </>
         ) : (
           BURN.map(([nm, note, pct, hot]) => (
             <div key={nm} className="bar">
@@ -454,9 +549,16 @@ export function Credits() {
           <>
             <div className="row">
               <div className="ic">◍</div>
-              <div className="body"><div className="nm">Daily cap · ${guards.daily_budget.toFixed(2)}</div><div className="meta">Per task default · ${guards.per_task_budget_default.toFixed(2)}</div></div>
+              <div className="body"><div className="nm">Daily cap · ${guards.daily_budget.toFixed(2)} · Monthly · ${guards.monthly_budget.toFixed(2)}</div><div className="meta">Per task default · ${guards.per_task_budget_default.toFixed(2)}{guards.agent_daily_cap != null ? ` · per agent/day · $${guards.agent_daily_cap.toFixed(2)}` : ''}{guards.burn_rate_alert_per_hour != null ? ` · alert above $${guards.burn_rate_alert_per_hour.toFixed(2)}/h` : ''}</div></div>
               <span className="badge">Rule</span>
             </div>
+            {Object.entries(guards.provider_monthly_caps).map(([prov, cap]) => (
+              <div key={prov} className="row">
+                <div className="ic">◍</div>
+                <div className="body"><div className="nm">{prov} · ${cap.toFixed(2)}/month</div><div className="meta">Selector skips {prov} once this is reached</div></div>
+                <span className="badge">Cap</span>
+              </div>
+            ))}
             {guards.custom_rules.length === 0 ? (
               <div className="row"><div className="body"><div className="meta">No custom rules — add one in Settings.</div></div></div>
             ) : guards.custom_rules.map((r) => (

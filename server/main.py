@@ -32,6 +32,8 @@ from files import router as files_router
 from auth import router as auth_router
 from metrics import router as metrics_router
 from dependencies import router as dependencies_router
+from ledger import router as ledger_router
+from archive import router as archive_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("dexter")
@@ -75,6 +77,9 @@ async def lifespan(app: FastAPI):
 
     brain = Brain(ollama=ollama, deepseek=deepseek, tracker=tracker)
     app.state.brain = brain
+    # Selector Core's execution path: any provider (Ollama included) behind one chat()
+    from shadow.selector import ModelGateway
+    app.state.gateway = ModelGateway(ollama, providers)
     active = await brain.describe()
     if active["ready"]:
         log.info("Brain online — %s · %s", active["provider"], active["model"])
@@ -90,6 +95,13 @@ async def lifespan(app: FastAPI):
     app.state.conversation_store = ConversationStore()
     app.state.semantic_memory = SemanticMemory(embed_fn=embed_fn)
     app.state.fact_store = FactStore()
+
+    # Executors are in-memory: anything in flight when the last process stopped is marked
+    # 'interrupted' and re-run (DEXTER_RESUME_INTERRUPTED=false to only mark them).
+    from shadow.agents_store import resume_interrupted
+    resumed = await resume_interrupted(app)
+    if resumed:
+        log.info("Recovered %d interrupted task(s)", resumed)
 
     yield
 
@@ -118,6 +130,8 @@ app.include_router(files_router)
 app.include_router(auth_router)
 app.include_router(metrics_router)
 app.include_router(dependencies_router)
+app.include_router(ledger_router)
+app.include_router(archive_router)
 
 
 @app.get("/")
