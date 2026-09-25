@@ -4,9 +4,14 @@
 // change (backend URL, test push). No system here is faked: everything
 // with a live dot is read straight from useBackend()/api.status().
 import { useEffect, useState } from 'react'
-import { api, setApiUrl, API_URL, type SpendReport } from '../lib/api'
+import { api, ApiError, setApiUrl, API_URL, type DocumentRecord, type GuardConfig, type SpendReport } from '../lib/api'
 import { useBackend } from '../lib/backend'
 import { useToast } from '../lib/toast'
+import { useAuth } from '../lib/auth'
+
+function errMsg(e: unknown): string {
+  return e instanceof ApiError ? e.message : 'Backend unreachable'
+}
 
 type ConnState = 'on' | 'off' | 'unk'
 
@@ -54,6 +59,183 @@ function ProviderRow({ icon, name, ok }: { icon: string; name: string; ok: boole
   )
 }
 
+// ---------- Guardrails (Build Plan 2.7 · P6) ----------
+
+function NumField({ label, value, onCommit, step = 0.5, prefix = '' }: {
+  label: string; value: number; onCommit: (v: number) => void; step?: number; prefix?: string
+}) {
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => setDraft(String(value)), [value])
+  return (
+    <div className="set-field">
+      <label className="label set-label">{label}</label>
+      <div className="set-inline">
+        <input
+          className="set-input"
+          type="number"
+          step={step}
+          min={0}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            const n = parseFloat(draft)
+            if (!Number.isNaN(n) && n !== value) onCommit(n)
+            else setDraft(String(value))
+          }}
+        />
+        {prefix && <span className="subnote" style={{ alignSelf: 'center' }}>{prefix}</span>}
+      </div>
+    </div>
+  )
+}
+
+function GuardsCard({ online }: { online: boolean }) {
+  const toast = useToast()
+  const [config, setConfig] = useState<GuardConfig | null>(null)
+  const [ruleName, setRuleName] = useState('')
+  const [ruleCap, setRuleCap] = useState('')
+
+  async function load() {
+    try {
+      setConfig(await api.guardConfig())
+    } catch {
+      setConfig(null)
+    }
+  }
+
+  useEffect(() => { if (online) load(); else setConfig(null) }, [online])
+
+  async function patch(update: Partial<Omit<GuardConfig, 'custom_rules'>>) {
+    try {
+      setConfig(await api.patchGuardConfig(update))
+      toast.push({ title: 'Guardrails updated', kind: 'good' })
+    } catch (e) {
+      toast.push({ title: 'Could not update guardrails', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  async function addRule() {
+    const name = ruleName.trim()
+    const cap = parseFloat(ruleCap)
+    if (!name || Number.isNaN(cap)) return
+    try {
+      setConfig(await api.addGuardRule({ name, max_spend: cap }))
+      setRuleName('')
+      setRuleCap('')
+    } catch (e) {
+      toast.push({ title: 'Could not add rule', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  async function removeRule(id: string) {
+    try {
+      setConfig(await api.removeGuardRule(id))
+    } catch (e) {
+      toast.push({ title: 'Could not remove rule', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="cardhead"><span className="label">Guardrails</span></div>
+      {!online && <p className="subnote">Connect to the backend to view and edit spend caps.</p>}
+      {online && !config && <p className="subnote">Loading guardrails…</p>}
+      {config && (
+        <>
+          <NumField label="Daily budget ($)" value={config.daily_budget} step={1} onCommit={(v) => patch({ daily_budget: v })} />
+          <NumField label="Per-task default ($)" value={config.per_task_budget_default} step={0.1} onCommit={(v) => patch({ per_task_budget_default: v })} />
+          <NumField label="High-cost multiplier (×)" value={config.high_cost_multiplier} step={0.5} onCommit={(v) => patch({ high_cost_multiplier: v })} />
+          <NumField label="Long-running limit (minutes)" value={config.long_running_minutes} step={5} onCommit={(v) => patch({ long_running_minutes: v })} />
+
+          <div className="cardhead" style={{ marginTop: 8 }}><span className="label" style={{ fontSize: 12 }}>Custom rules</span></div>
+          {config.custom_rules.length === 0 && <p className="subnote">No custom rules yet.</p>}
+          {config.custom_rules.map((r) => (
+            <div key={r.id} className="row">
+              <div className="body"><div className="nm">{r.name}</div><div className="meta">caps at ${r.max_spend?.toFixed(2) ?? '—'}</div></div>
+              <button className="set-btn" onClick={() => removeRule(r.id)}>Remove</button>
+            </div>
+          ))}
+          <div className="set-field">
+            <div className="set-inline">
+              <input className="set-input" placeholder="Rule name" value={ruleName} onChange={(e) => setRuleName(e.target.value)} />
+              <input className="set-input" placeholder="Max $" type="number" step={0.1} style={{ maxWidth: 90 }} value={ruleCap} onChange={(e) => setRuleCap(e.target.value)} />
+              <button className="set-btn" disabled={!ruleName.trim() || !ruleCap} onClick={addRule}>Add rule</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------- Ingested documents (Build Plan 2.5 · P5) ----------
+
+function DocumentsCard({ online }: { online: boolean }) {
+  const toast = useToast()
+  const [docs, setDocs] = useState<DocumentRecord[] | null>(null)
+  const [url, setUrl] = useState('')
+  const [ingesting, setIngesting] = useState(false)
+
+  async function load() {
+    try {
+      setDocs(await api.files())
+    } catch {
+      setDocs(null)
+    }
+  }
+
+  useEffect(() => { if (online) load(); else setDocs(null) }, [online])
+
+  async function ingest() {
+    const v = url.trim()
+    if (!v || ingesting) return
+    setIngesting(true)
+    try {
+      await api.ingestUrl(v)
+      setUrl('')
+      load()
+      toast.push({ title: 'URL ingested', kind: 'good' })
+    } catch (e) {
+      toast.push({ title: 'Could not ingest URL', body: errMsg(e), kind: 'warn' })
+    } finally {
+      setIngesting(false)
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await api.deleteFile(id)
+      load()
+    } catch (e) {
+      toast.push({ title: 'Could not delete', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="cardhead"><span className="label">Ingested Documents{docs ? ` · ${docs.length}` : ''}</span></div>
+      <p className="subnote">Uploaded from Chat's attach button, or added here by URL. Feeds Dexter's memory recall.</p>
+      {online && (
+        <div className="set-field">
+          <div className="set-inline">
+            <input className="set-input" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') ingest() }} />
+            <button className="set-btn" disabled={!url.trim() || ingesting} onClick={ingest}>{ingesting ? 'Ingesting…' : 'Ingest URL'}</button>
+          </div>
+        </div>
+      )}
+      {!online && <p className="subnote">Connect to the backend to see and manage ingested documents.</p>}
+      {online && docs?.length === 0 && <p className="subnote">Nothing ingested yet.</p>}
+      {docs?.map((d) => (
+        <div key={d.id} className="row">
+          <div className="ic">{d.source === 'url' ? '⎘' : '▤'}</div>
+          <div className="body"><div className="nm">{d.title}</div><div className="meta">{d.char_count.toLocaleString()} chars · {d.origin}</div></div>
+          <button className="set-btn" onClick={() => remove(d.id)}>Delete</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 interface Integration {
   icon: string
   name: string
@@ -73,6 +255,8 @@ const INTEGRATIONS: Integration[] = [
 
 export default function Settings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { online, checked, status } = useBackend()
+  const { requireAuth, me: identity, businesses, logout, switchBusiness } = useAuth()
+  const [switching, setSwitching] = useState(false)
   const { push } = useToast()
   const [urlInput, setUrlInput] = useState(API_URL)
   const [spend, setSpend] = useState<SpendReport | null>(null)
@@ -120,6 +304,9 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
 
   const providers = online ? status?.providers : undefined
   const providerOk = (key: string): boolean | null => (providers ? Boolean(providers[key]) : null)
+
+  const prometheus = online ? status?.prometheus : undefined
+  const prometheusState: ConnState = !prometheus ? 'unk' : !prometheus.configured ? 'off' : sys(prometheus.connected)
 
   const topic = notif?.topic ?? null
   const canSaveUrl = urlInput.trim() !== '' && urlInput.trim() !== API_URL
@@ -196,6 +383,12 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
               meta={notif ? `${notif.topic} @ ${notif.server}` : undefined}
               state={notif ? sys(notif.configured) : 'unk'}
             />
+            <ConnRow
+              icon="◭"
+              name="Prometheus · PM"
+              meta={prometheus?.configured ? prometheus.url ?? undefined : 'Set DEXTER_PROMETHEUS_MCP_URL / _TOKEN in server/.env'}
+              state={prometheusState}
+            />
           </div>
 
           {/* ---------- Cloud Escalation ---------- */}
@@ -224,6 +417,9 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
             {online && !spend && <p className="subnote">Loading today's spend…</p>}
             {!online && <p className="subnote">Connect to the backend to see provider keys and today's spend.</p>}
           </div>
+
+          <GuardsCard online={online} />
+          <DocumentsCard online={online} />
 
           {/* ---------- Integrations ---------- */}
           <div className="card">
@@ -255,6 +451,45 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
               the backend already runs — no subscription.
             </p>
           </div>
+
+          {/* ---------- Account (Phase 4 · only meaningful once auth is on) ---------- */}
+          {requireAuth && identity && (
+            <div className="card">
+              <div className="cardhead"><span className="label">Account</span></div>
+              <div className="row">
+                <div className="body">
+                  <div className="nm">{identity.user.name || identity.user.email} <span className="badge">{identity.role}</span></div>
+                  <div className="meta">{identity.user.email} · {identity.business_name}</div>
+                </div>
+                <button className="set-btn" onClick={logout}>Sign out</button>
+              </div>
+              {businesses.length > 1 && (
+                <div className="set-field">
+                  <label className="label set-label" htmlFor="set-business-switch">Business</label>
+                  <select
+                    id="set-business-switch"
+                    className="set-input"
+                    value={identity.business_id}
+                    disabled={switching}
+                    onChange={async (e) => {
+                      setSwitching(true)
+                      try {
+                        await switchBusiness(e.target.value)
+                        push({ title: 'Switched business', kind: 'good' })
+                      } catch (err) {
+                        push({ title: 'Could not switch', body: errMsg(err), kind: 'warn' })
+                      } finally {
+                        setSwitching(false)
+                      }
+                    }}
+                  >
+                    {businesses.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.role})</option>)}
+                  </select>
+                  <p className="subnote">Everything below — Team, Dependency Map, Projects, Tasks, Agents — reflects whichever business is selected.</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ---------- Preferences ---------- */}
           <div className="card">

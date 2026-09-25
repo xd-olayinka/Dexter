@@ -12,7 +12,17 @@ One app, two operatives, two faces. Toggle between them any time.
 
 ## Status
 
-**Milestone 1 · Live backend + UI wired.** UI shell, dual-protocol design system, and a full Python FastAPI backend with 6 layers (chat, memory, tools, voice, shadow executors, cloud escalation). Everything degrades to Demo mode when the backend isn't running, so the Pages deploy stays alive.
+**Milestone 3 · Phase 2 + most of Phase 3/4 complete** (see `docs/BACKEND_TASKS.md` for P1–P6,
+`docs/PHASE_3_4_PLAN.md` for what's below). Anthony runs real work through the Brain instead of a
+stub; chat has persistent + semantic memory; Projects/Tasks, the morning briefing, and file/URL
+ingest are live; guard caps/rules are runtime-editable; push-to-talk voice is wired end to end.
+Accounts + businesses exist (off by default — `DEXTER_REQUIRE_AUTH=false`), with real invites and
+a multi-business switcher; persistent Agent identity has a real efficiency score; the PRD §8
+success metrics are tracked against their own stated targets; and the **Prometheus MCP bridge is
+wired and verified live** against a real production Prometheus workspace (`DEXTER_PROMETHEUS_MCP_URL`/
+`_TOKEN`). The Dependency map (business → team → agent → tool, PRD §4) shows real, observed
+relationships — never a fabricated edge. 30+ backend tests passing (`server/tests/`). Everything
+still degrades to Demo mode when the backend isn't running, so the Pages deploy stays alive.
 
 See [`docs/setup.html`](docs/setup.html) for the step-by-step install checklist — Ollama, Postgres + pgvector, SearXNG, voice pipeline, ntfy phone push, optional cloud API keys.
 

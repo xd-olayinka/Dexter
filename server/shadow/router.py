@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from config import settings
 from models import Task
-from shadow.budget import BudgetTracker, DailyBudgetLedger
+from shadow.budget import BudgetTracker
 from shadow.executor import ExecutorManager
+from shadow.guard_config import GuardConfig, guard_config_store
+from shadow.agents_store import list_agents
+from auth import CurrentContext, current_context
 
 router = APIRouter(prefix="/api/shadow", tags=["shadow"])
 
@@ -31,20 +33,32 @@ class RejectRequest(BaseModel):
 
 
 @router.post("/delegate")
-async def delegate_task(req: DelegateRequest, request: Request):
+async def delegate_task(req: DelegateRequest, request: Request, ctx: CurrentContext = Depends(current_context)):
     mgr = get_manager()
+    config = await guard_config_store.get()
     task = Task(
         title=req.title,
         description=req.description,
-        budget_cap=req.budget_cap or settings.per_task_budget_default,
+        budget_cap=req.budget_cap or config.per_task_budget_default,
     )
     work_fn = None
+    model_route = None
     brain = getattr(request.app.state, "brain", None)
-    if brain is not None and (await brain.describe())["ready"]:
-        from shadow.work import make_llm_work_fn
-        work_fn = make_llm_work_fn(brain)
-    task_id = await mgr.spawn(task, work_fn=work_fn)
+    if brain is not None:
+        active = await brain.describe()
+        if active["ready"]:
+            from shadow.work import make_llm_work_fn
+            work_fn = make_llm_work_fn(brain)
+            model_route = f"{active['provider']}:{active['model']}"
+    task_id = await mgr.spawn(task, work_fn=work_fn, owner_user_id=ctx.user_id, business_id=ctx.business_id, model_route=model_route)
     return task.model_dump(mode="json")
+
+
+@router.get("/agents")
+async def get_agents(ctx: CurrentContext = Depends(current_context)):
+    """Real, persistent Agent identity (docs/PHASE_3_4_PLAN.md §2) — feeds the Swarm
+    screen. Empty without a database (agents aren't persisted, same as everything else)."""
+    return await list_agents(ctx.business_id)
 
 
 @router.get("/tasks")
@@ -128,15 +142,53 @@ async def create_test_gate():
 @router.get("/budget")
 async def get_budget():
     mgr = get_manager()
-    ledger = DailyBudgetLedger()
+    config = await guard_config_store.get()
     active = await mgr.list_active()
     tracker = BudgetTracker(
         task_id="__global__",
         task_budget=0,
-        daily_budget=settings.daily_cloud_budget,
+        daily_budget=config.daily_budget,
     )
     snapshot = tracker.get_snapshot(
         active_tasks=len(active),
         total_tasks_today=len(mgr.list_all()),
     )
     return snapshot.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------- guard config (P6)
+
+class GuardPatch(BaseModel):
+    daily_budget: float | None = None
+    per_task_budget_default: float | None = None
+    high_cost_multiplier: float | None = None
+    long_running_minutes: int | None = None
+
+
+class RuleIn(BaseModel):
+    name: str
+    keyword: str = ""
+    max_spend: float | None = None
+    require_approval: bool = False
+
+
+@router.get("/guards", response_model=GuardConfig)
+async def get_guard_config():
+    return await guard_config_store.get()
+
+
+@router.patch("/guards", response_model=GuardConfig)
+async def patch_guard_config(patch: GuardPatch):
+    return await guard_config_store.update(patch.model_dump(exclude_unset=True))
+
+
+@router.post("/guards/rules", response_model=GuardConfig, status_code=201)
+async def add_guard_rule(rule: RuleIn):
+    return await guard_config_store.add_rule(
+        name=rule.name, keyword=rule.keyword, max_spend=rule.max_spend, require_approval=rule.require_approval,
+    )
+
+
+@router.delete("/guards/rules/{rule_id}", response_model=GuardConfig)
+async def remove_guard_rule(rule_id: str):
+    return await guard_config_store.remove_rule(rule_id)

@@ -4,6 +4,8 @@ import avShadow from '../assets/img/avatar-shadow.jpg'
 import avOrch from '../assets/img/avatar-orch.jpg'
 import { useBackend } from '../lib/backend'
 import { ChatWs, type ChatWsFrame } from '../lib/chatws'
+import { api, ApiError } from '../lib/api'
+import { MicButton } from '../components/MicButton'
 
 type Msg = { who: 'dexter' | 'me'; text: string; img?: string; warn?: boolean; streaming?: boolean }
 
@@ -134,16 +136,36 @@ export default function Chat({ mode }: { mode: Mode }) {
     }, 500)
   }
 
-  function upload(e: React.ChangeEvent<HTMLInputElement>) {
+  // Build Plan 2.5: images stay a local-only preview (no vision model wired into the
+  // Brain yet); a document (pdf/txt/md/csv) goes to /api/files/upload for real —
+  // extracted, embedded, and folded into chat context via memory recall (chat.py).
+  async function upload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
-    if (!f) return
-    const url = URL.createObjectURL(f)
-    setMsgs((m) => [
-      ...m,
-      { who: 'me', text: `Uploaded: ${f.name}`, img: url },
-      { who: 'dexter', text: 'Image received and attached to the active thread.' },
-    ])
     e.target.value = ''
+    if (!f) return
+
+    if (f.type.startsWith('image/')) {
+      const url = URL.createObjectURL(f)
+      setMsgs((m) => [
+        ...m,
+        { who: 'me', text: `Uploaded: ${f.name}`, img: url },
+        { who: 'dexter', text: 'Image received and attached to the active thread — Dexter can’t see images yet, so it won’t be able to describe this one.' },
+      ])
+      return
+    }
+
+    if (!online) {
+      setMsgs((m) => [...m, { who: 'me', text: `Attach: ${f.name}` }, { who: 'dexter', text: 'Backend offline — connect to ingest documents.', warn: true }])
+      return
+    }
+
+    setMsgs((m) => [...m, { who: 'me', text: `Ingesting: ${f.name}…` }])
+    try {
+      const doc = await api.uploadFile(f)
+      setMsgs((m) => [...m, { who: 'dexter', text: `Ingested "${doc.title}" (${doc.char_count.toLocaleString()} chars) into memory. Ask me about it any time.` }])
+    } catch (err) {
+      setMsgs((m) => [...m, { who: 'dexter', text: err instanceof ApiError ? err.message : 'Could not ingest that file.', warn: true }])
+    }
   }
 
   const modelName = status?.brain?.ready ? status.brain.model : status?.ollama.model
@@ -181,8 +203,13 @@ export default function Chat({ mode }: { mode: Mode }) {
       </div>
       <div className="chatinput">
         <label className="attach">
-          ＋<input type="file" accept="image/*" hidden onChange={upload} />
+          ＋<input type="file" accept="image/*,.pdf,.txt,.md,.csv" hidden onChange={upload} />
         </label>
+        <MicButton
+          protocol={mode}
+          onTranscript={(text) => setDraft((d) => (d ? `${d} ${text}` : text))}
+          onError={(msg) => setMsgs((m) => [...m, { who: 'dexter', text: msg, warn: true }])}
+        />
         <input
           type="text"
           placeholder="Command Dexter..."

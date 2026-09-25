@@ -5,11 +5,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine
 
-from config import settings
 from models import Task, TaskStatus
 from shadow.budget import BudgetTracker
 from shadow.gates import GateManager
 from shadow.guards import GuardChain
+from shadow.guard_config import guard_config_store
+from shadow.agents_store import record_completion, record_spawn
 
 log = logging.getLogger("dexter.shadow.executor")
 
@@ -69,10 +70,12 @@ class ExecutorProcess:
         finally:
             self.task.spend = self.budget.task_spend
             self._notify_update()
+            await record_completion(self.task)
 
     async def _enter_gate(self, reason: str) -> None:
         self.task.status = TaskStatus.GATED
         self._notify_update()
+        await record_completion(self.task)
         self._gate_event.clear()
 
         gate = await self.gate_manager.create_gate(
@@ -112,7 +115,6 @@ class ExecutorManager:
         self._executors: dict[str, ExecutorProcess] = {}
         self._tasks: dict[str, Task] = {}
         self._gate_manager = gate_manager or GateManager()
-        self._guard_chain = GuardChain.default_chain()
 
     @property
     def gate_manager(self) -> GateManager:
@@ -123,21 +125,30 @@ class ExecutorManager:
         task: Task,
         on_update: Callable[[Task], Any] | None = None,
         work_fn: WorkFn | None = None,
+        owner_user_id: str | None = None,
+        business_id: str | None = None,
+        model_route: str | None = None,
     ) -> str:
+        # Built fresh from the live config on every spawn (docs/BACKEND_TASKS.md P6) —
+        # a guard edit in Settings takes effect for the next task, no restart, no
+        # cached chain to invalidate. An already-running task keeps the chain (and
+        # budget) it spawned with; that's the correct behavior, not a staleness bug.
+        config = await guard_config_store.get()
         if task.budget_cap is None:
-            task.budget_cap = settings.per_task_budget_default
+            task.budget_cap = config.per_task_budget_default
 
         budget = BudgetTracker(
             task_id=task.id,
             task_budget=task.budget_cap,
-            daily_budget=settings.daily_cloud_budget,
+            daily_budget=config.daily_budget,
         )
+        guard_chain = GuardChain.from_config(config)
 
         callback = on_update or (lambda t: None)
         executor = ExecutorProcess(
             task=task,
             budget=budget,
-            guard_chain=self._guard_chain,
+            guard_chain=guard_chain,
             gate_manager=self._gate_manager,
             on_update=callback,
         )
@@ -145,6 +156,7 @@ class ExecutorManager:
         self._executors[task.id] = executor
         self._tasks[task.id] = task
         task.status = TaskStatus.QUEUED
+        await record_spawn(task, owner_user_id, business_id, model_route)
         fn = work_fn or _default_work_fn
         executor._asyncio_task = asyncio.create_task(executor.run(fn))
         log.info("Task spawned: %s '%s' budget=$%.2f", task.id, task.title, task.budget_cap)
@@ -162,6 +174,7 @@ class ExecutorManager:
             executor._asyncio_task.cancel()
         task.status = TaskStatus.KILLED
         task.completed_at = datetime.now(timezone.utc)
+        await record_completion(task)
         log.info("Task killed: %s reason=%s", task_id, reason)
         return True
 

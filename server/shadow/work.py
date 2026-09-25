@@ -43,7 +43,7 @@ def make_llm_work_fn(brain):
             {"role": "user", "content": objective},
         ]
         log.info("Executor %s running via brain (tools: %s)", task.id, registry.list_tools())
-        result, _ = await run_with_tools(tracked, messages, registry, max_rounds=6)
+        result, _ = await run_with_tools(tracked, messages, registry, max_rounds=6, task_id=task.id)
         return result or "Executor finished without a final report."
 
     return work_fn

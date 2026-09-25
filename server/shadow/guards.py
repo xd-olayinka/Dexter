@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from config import settings
 from models import Task
 from shadow.budget import BudgetTracker
+from shadow.guard_config import GuardConfig
 
 
 @dataclass
@@ -29,27 +29,37 @@ def _daily_budget_exceeded(task: Task, budget: BudgetTracker) -> str | None:
     return None
 
 
-def _high_cost_task(task: Task, budget: BudgetTracker) -> str | None:
-    cap = task.budget_cap or settings.per_task_budget_default
-    if cap > 2 * settings.per_task_budget_default:
-        return f"High-cost task: budget cap ${cap:.2f} > 2× default ${settings.per_task_budget_default:.2f}"
-    return None
+def _make_high_cost_task(config: GuardConfig) -> Callable[[Task, BudgetTracker], str | None]:
+    def check(task: Task, budget: BudgetTracker) -> str | None:
+        cap = task.budget_cap or config.per_task_budget_default
+        threshold = config.high_cost_multiplier * config.per_task_budget_default
+        if cap > threshold:
+            return f"High-cost task: budget cap ${cap:.2f} > {config.high_cost_multiplier:.1f}x default ${config.per_task_budget_default:.2f}"
+        return None
+    return check
 
 
-def _long_running(task: Task, budget: BudgetTracker) -> str | None:
-    if task.status.value == "running" and task.created_at:
-        elapsed = (datetime.now(timezone.utc) - task.created_at).total_seconds()
-        if elapsed > 1800:
-            return f"Task running for {elapsed / 60:.0f} minutes (limit: 30)"
-    return None
+def _make_long_running(config: GuardConfig) -> Callable[[Task, BudgetTracker], str | None]:
+    def check(task: Task, budget: BudgetTracker) -> str | None:
+        if task.status.value == "running" and task.created_at:
+            elapsed = (datetime.now(timezone.utc) - task.created_at).total_seconds()
+            limit_s = config.long_running_minutes * 60
+            if elapsed > limit_s:
+                return f"Task running for {elapsed / 60:.0f} minutes (limit: {config.long_running_minutes})"
+        return None
+    return check
 
 
-BUILTIN_RULES = [
-    GuardRule(name="budget_exceeded", check=_budget_exceeded),
-    GuardRule(name="daily_budget_exceeded", check=_daily_budget_exceeded),
-    GuardRule(name="high_cost_task", check=_high_cost_task),
-    GuardRule(name="long_running", check=_long_running),
-]
+def _make_custom_rule(rule) -> Callable[[Task, BudgetTracker], str | None]:
+    def check(task: Task, budget: BudgetTracker) -> str | None:
+        if rule.keyword and rule.keyword.lower() not in task.title.lower():
+            return None
+        if rule.max_spend is not None and budget.task_spend > rule.max_spend:
+            return f"Guard \"{rule.name}\": spend ${budget.task_spend:.2f} > ${rule.max_spend:.2f}"
+        if rule.require_approval:
+            return f"Guard \"{rule.name}\": always requires approval"
+        return None
+    return check
 
 
 class GuardChain:
@@ -67,8 +77,13 @@ class GuardChain:
         return None
 
     @staticmethod
-    def default_chain() -> GuardChain:
+    def from_config(config: GuardConfig) -> GuardChain:
         chain = GuardChain()
-        for rule in BUILTIN_RULES:
-            chain.add_rule(rule)
+        chain.add_rule(GuardRule(name="budget_exceeded", check=_budget_exceeded))
+        chain.add_rule(GuardRule(name="daily_budget_exceeded", check=_daily_budget_exceeded))
+        chain.add_rule(GuardRule(name="high_cost_task", check=_make_high_cost_task(config)))
+        chain.add_rule(GuardRule(name="long_running", check=_make_long_running(config)))
+        for rule in config.custom_rules:
+            if rule.enabled:
+                chain.add_rule(GuardRule(name=f"custom:{rule.id}", check=_make_custom_rule(rule)))
         return chain

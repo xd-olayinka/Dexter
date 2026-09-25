@@ -55,6 +55,9 @@ class GateManager:
     def list_pending(self) -> list[ApprovalGate]:
         return [g for g in self._gates.values() if g.status == "pending"]
 
+    def list_resolved_since(self, since: datetime) -> list[ApprovalGate]:
+        return [g for g in self._gates.values() if g.resolved_at and g.resolved_at > since]
+
     def get(self, task_id: str) -> ApprovalGate | None:
         return self._gates.get(task_id)
 

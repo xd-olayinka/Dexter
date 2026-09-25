@@ -7,15 +7,15 @@ log = logging.getLogger("dexter.memory.store")
 
 
 class ConversationStore:
-    async def create_conversation(self, protocol: Protocol) -> str:
+    async def create_conversation(self, protocol: Protocol, user_id: str | None = None, business_id: str | None = None) -> str:
         pool = await get_pool()
         if pool is None:
             raise RuntimeError("Database unavailable")
 
         async with pool.connection() as conn:
             row = await conn.execute(
-                "INSERT INTO conversations (protocol) VALUES (%s) RETURNING id",
-                (protocol.value,),
+                "INSERT INTO conversations (protocol, user_id, business_id) VALUES (%s, %s, %s) RETURNING id",
+                (protocol.value, user_id, business_id),
             )
             result = await row.fetchone()
             return str(result[0])

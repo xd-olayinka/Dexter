@@ -7,6 +7,7 @@ async def run_with_tools(
     messages: list[dict],
     tool_registry: ToolRegistry,
     max_rounds: int = 5,
+    task_id: str | None = None,
 ) -> tuple[str, list[dict]]:
     tools = tool_registry.get_schema()
 
@@ -29,7 +30,7 @@ async def run_with_tools(
                 name=fn.get("name", ""),
                 arguments=fn.get("arguments", {}),
             )
-            result = await tool_registry.execute(tool_call)
+            result = await tool_registry.execute(tool_call, task_id=task_id)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.get("id", ""),

@@ -21,6 +21,17 @@ from escalation import (
     DeepSeekProvider,
 )
 from brain import Brain
+from memory.store import ConversationStore
+from memory.semantic import SemanticMemory
+from memory.facts import FactStore
+from memory.embeddings import make_embed_fn
+from db.connection import init_db, close_pool
+from projects import router as projects_router
+from briefing import router as briefing_router
+from files import router as files_router
+from auth import router as auth_router
+from metrics import router as metrics_router
+from dependencies import router as dependencies_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("dexter")
@@ -70,9 +81,20 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("Brain has no provider — install Ollama or set DEXTER_DEEPSEEK_API_KEY")
 
+    # Memory (P2). init_db() no-ops (logs + returns) when Postgres isn't reachable —
+    # every store below then just returns empty/raises RuntimeError per-call, which
+    # chat.py and files.py already catch, so startup never fails on a missing DB.
+    await init_db()
+    embed_fn = make_embed_fn(ollama)
+    app.state.embed_fn = embed_fn
+    app.state.conversation_store = ConversationStore()
+    app.state.semantic_memory = SemanticMemory(embed_fn=embed_fn)
+    app.state.fact_store = FactStore()
+
     yield
 
     log.info("Shutting down Dexter")
+    await close_pool()
 
 
 app = FastAPI(title="Dexter", version="0.1.0", lifespan=lifespan)
@@ -90,6 +112,12 @@ app.include_router(shadow_router)
 app.include_router(voice_router)
 app.include_router(escalation_router)
 app.include_router(status_router)
+app.include_router(projects_router)
+app.include_router(briefing_router)
+app.include_router(files_router)
+app.include_router(auth_router)
+app.include_router(metrics_router)
+app.include_router(dependencies_router)
 
 
 @app.get("/")
@@ -98,5 +126,5 @@ async def health():
 
 
 @app.websocket("/ws/chat")
-async def ws_chat(ws: WebSocket):
-    await websocket_chat(ws, app.state)
+async def ws_chat(ws: WebSocket, token: str | None = None):
+    await websocket_chat(ws, app.state, token)

@@ -9,6 +9,8 @@ import NotificationBell from './components/NotificationBell'
 import GateWatcher from './components/GateWatcher'
 import { BackendProvider, useBackend } from './lib/backend'
 import { ToastProvider } from './lib/toast'
+import { AuthProvider, useAuth } from './lib/auth'
+import Auth from './screens/Auth'
 
 function Shell() {
   const [mode, setMode] = useState<Mode>('orch')
@@ -101,12 +103,19 @@ function Shell() {
   )
 }
 
+function Gate() {
+  const { needsLogin } = useAuth()
+  return needsLogin ? <Auth /> : <Shell />
+}
+
 export default function App() {
   return (
     <BackendProvider>
-      <ToastProvider>
-        <Shell />
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <Gate />
+        </ToastProvider>
+      </AuthProvider>
     </BackendProvider>
   )
 }

@@ -30,6 +30,7 @@ class SemanticMemory:
         query: str,
         limit: int = 5,
         conversation_id: str | None = None,
+        business_id: str | None = None,
     ) -> list[dict]:
         vec = await self._embed(query)
         if not vec:
@@ -39,22 +40,24 @@ class SemanticMemory:
         if pool is None:
             return []
 
+        # business_id is enforced via a join, not a denormalized column on messages —
+        # keeps this table's shape stable regardless of how Phase 4's scoping evolves.
+        clauses = ["m.embedding IS NOT NULL"]
+        params: list = [str(vec)]
         if conversation_id:
-            sql = """SELECT id, content, role, conversation_id,
-                        1 - (embedding <=> %s::vector) AS similarity
-                    FROM messages
-                    WHERE embedding IS NOT NULL AND conversation_id = %s
-                    ORDER BY embedding <=> %s::vector
-                    LIMIT %s"""
-            params = (str(vec), conversation_id, str(vec), limit)
-        else:
-            sql = """SELECT id, content, role, conversation_id,
-                        1 - (embedding <=> %s::vector) AS similarity
-                    FROM messages
-                    WHERE embedding IS NOT NULL
-                    ORDER BY embedding <=> %s::vector
-                    LIMIT %s"""
-            params = (str(vec), str(vec), limit)
+            clauses.append("m.conversation_id = %s")
+            params.append(conversation_id)
+        if business_id:
+            clauses.append("c.business_id = %s")
+            params.append(business_id)
+        params.extend([str(vec), limit])
+
+        sql = f"""SELECT m.id, m.content, m.role, m.conversation_id,
+                    1 - (m.embedding <=> %s::vector) AS similarity
+                FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY m.embedding <=> %s::vector
+                LIMIT %s"""
 
         async with pool.connection() as conn:
             cur = await conn.execute(sql, params)

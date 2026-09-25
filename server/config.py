@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     daily_cloud_budget: float = 5.00
     per_task_budget_default: float = 0.50
 
+    # Phase 4 · Auth (docs/PHASE_3_4_PLAN.md §1) — off by default so the single-user
+    # setup you already have keeps working with no login screen. Turn on once there's
+    # an actual team; every request is attributed to an auto-created default business/
+    # user until then, same bootstrap-on-first-use pattern as Prometheus's workspace.
+    require_auth: bool = False
+    session_ttl_days: int = 30
+
+    # Phase 3 · Prometheus MCP bridge (docs/PROMETHEUS_MCP_SPEC.md)
+    prometheus_mcp_token: str = ""
+    prometheus_mcp_url: str = ""  # e.g. https://your-deployment.convex.site/mcp — empty = not connected
+
     model_config = {"env_file": ".env", "env_prefix": "DEXTER_"}
 
 

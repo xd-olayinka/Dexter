@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { RUN_LOG, GATES, SWARM, MODEL_POOL, PICKS, BURN, GUARDS } from '../data'
 import operative from '../assets/img/operative.png'
-import { api, type TaskInfo } from '../lib/api'
+import { api, ApiError, type AgentRecord, type GuardConfig, type ModelRoute, type SpendReport, type TaskInfo } from '../lib/api'
 import { useBackend } from '../lib/backend'
 import { useToast } from '../lib/toast'
+
+function errMsg(e: unknown): string {
+  return e instanceof ApiError ? e.message : 'Anthony did not respond'
+}
 
 function statusBadgeCls(status: TaskInfo['status']): string {
   if (status === 'running') return 'ylw'
@@ -204,61 +208,193 @@ export function ShadowOps() {
   )
 }
 
+function agentStCls(status: string): string {
+  if (status === 'done') return 'live'
+  if (status === 'killed') return 'dead'
+  if (status === 'running' || status === 'gated') return 'live'
+  return 'q'
+}
+
 export function Swarm() {
+  const { online } = useBackend()
+  const [agents, setAgents] = useState<AgentRecord[] | null>(null)
+
+  async function load() {
+    try {
+      setAgents(await api.agents())
+    } catch {
+      /* transient */
+    }
+  }
+
+  useEffect(() => {
+    if (!online) { setAgents(null); return }
+    load()
+    const t = setInterval(load, 10000)
+    return () => clearInterval(t)
+  }, [online])
+
+  const usingLive = online && agents !== null
+  const totalSpend = usingLive ? agents!.reduce((s, a) => s + a.spend, 0) : 0
+  const avgEff = usingLive && agents!.length
+    ? agents!.reduce((s, a) => s + (a.efficiency_normalized ?? 0), 0) / agents!.length
+    : 0
+
   return (
     <div className="content">
       <h1 className="bigtitle">Executor Swarm</h1>
-      <p className="subnote lead">Sub-agents Anthony created. Efficiency scores decide who survives.</p>
-      <div className="swarm">
-        {SWARM.map(([id, nm, st, eff, work, cost]) => (
-          <div key={id} className="unit">
-            <span className={`st ${st}`} />
-            <div className="id">{id}</div>
-            <div className="nm" style={st === 'dead' ? { textDecoration: 'line-through', textDecorationColor: 'rgba(199,54,31,.6)' } : undefined}>{nm}</div>
-            <div className="eff">
-              <div className="k"><span>Efficiency</span><span>{eff.toFixed(2)}</span></div>
-              <div className="track"><div className={`fill${eff < 0.6 ? ' low' : ''}`} style={{ width: `${eff * 100}%` }} /></div>
-            </div>
-            <div className="foot"><span>{work}</span><span>{cost}</span></div>
+      <p className="subnote lead">
+        {usingLive ? 'Real agents Anthony has spawned, with a computed efficiency score (outcome ÷ spend, normalized to this batch).' : "Sub-agents Anthony created. Efficiency scores decide who survives."}
+      </p>
+      {usingLive ? (
+        agents!.length === 0 ? (
+          <p className="subnote">No agents spawned yet — delegate a task from Home or Chat.</p>
+        ) : (
+          <div className="swarm">
+            {agents!.map((a) => {
+              const eff = a.efficiency_normalized ?? 0
+              return (
+                <div key={a.id} className="unit">
+                  <span className={`st ${agentStCls(a.status)}`} />
+                  <div className="id">{a.id.replace('agent_task_', 'EX-')}</div>
+                  <div className="nm" style={a.status === 'killed' ? { textDecoration: 'line-through', textDecorationColor: 'rgba(199,54,31,.6)' } : undefined}>{a.name}</div>
+                  <div className="eff">
+                    <div className="k"><span>Efficiency</span><span>{a.efficiency_score != null ? eff.toFixed(2) : '—'}</span></div>
+                    <div className="track"><div className={`fill${eff < 0.6 ? ' low' : ''}`} style={{ width: `${eff * 100}%` }} /></div>
+                  </div>
+                  <div className="foot"><span>{a.status}</span><span>${a.spend.toFixed(2)}</span></div>
+                </div>
+              )
+            })}
           </div>
-        ))}
-      </div>
+        )
+      ) : (
+        <div className="swarm">
+          {SWARM.map(([id, nm, st, eff, work, cost]) => (
+            <div key={id} className="unit">
+              <span className={`st ${st}`} />
+              <div className="id">{id}</div>
+              <div className="nm" style={st === 'dead' ? { textDecoration: 'line-through', textDecorationColor: 'rgba(199,54,31,.6)' } : undefined}>{nm}</div>
+              <div className="eff">
+                <div className="k"><span>Efficiency</span><span>{eff.toFixed(2)}</span></div>
+                <div className="track"><div className={`fill${eff < 0.6 ? ' low' : ''}`} style={{ width: `${eff * 100}%` }} /></div>
+              </div>
+              <div className="foot"><span>{work}</span><span>{cost}</span></div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="card">
         <div className="cardhead"><span className="label">Swarm Totals</span></div>
         <div className="row">
           <div className="ic">Σ</div>
-          <div className="body"><div className="nm">1,284 tasks terminated tonight</div><div className="meta">avg 0.87 efficiency · $14.20 total burn</div></div>
-          <span className="badge grn">Healthy</span>
+          <div className="body">
+            <div className="nm">{usingLive ? `${agents!.length} agent(s) on record` : '1,284 tasks terminated tonight'}</div>
+            <div className="meta">{usingLive ? `avg ${avgEff.toFixed(2)} efficiency · $${totalSpend.toFixed(2)} total spend` : 'avg 0.87 efficiency · $14.20 total burn'}</div>
+          </div>
+          <span className="badge grn">{usingLive ? 'Live' : 'Healthy'}</span>
         </div>
       </div>
     </div>
   )
 }
 
+interface ProviderInfo { name: string; available: boolean; default_model: string }
+
+function ProviderRow({ p }: { p: ProviderInfo }) {
+  return (
+    <div className="row">
+      <div className="ic">{p.available ? '●' : '○'}</div>
+      <div className="body"><div className="nm">{p.name} <span className={`badge${p.available ? ' grn' : ''}`}>{p.available ? 'Reachable' : 'No key'}</span></div><div className="meta">{p.default_model}</div></div>
+    </div>
+  )
+}
+
 export function Selector() {
+  const { online } = useBackend()
+  const toast = useToast()
+  const [providers, setProviders] = useState<ProviderInfo[] | null>(null)
+  const [msg, setMsg] = useState('')
+  const [route, setRoute] = useState<ModelRoute | null>(null)
+  const [routing, setRouting] = useState(false)
+
+  useEffect(() => {
+    if (!online) { setProviders(null); return }
+    let cancelled = false
+    api.providers().then((r) => { if (!cancelled) setProviders(r.providers) }).catch(() => { if (!cancelled) setProviders(null) })
+    return () => { cancelled = true }
+  }, [online])
+
+  async function tryRoute() {
+    const v = msg.trim()
+    if (!v || routing) return
+    setRouting(true)
+    try {
+      setRoute(await api.routeDryRun(v))
+    } catch (e) {
+      toast.push({ title: 'Dry run failed', body: errMsg(e), kind: 'warn' })
+    } finally {
+      setRouting(false)
+    }
+  }
+
+  const usingLive = online && providers !== null
+
   return (
     <div className="content" style={{ maxWidth: 760 }}>
       <h1 className="bigtitle">Selector Core</h1>
       <p className="subnote lead">Scores cost × capability × latency, then picks the cheapest capable executor. Every pick is explainable.</p>
       <div className="card">
-        <div className="cardhead"><span className="label">Model Pool</span><span className="badge grn">All Reachable</span></div>
-        {MODEL_POOL.map(([ic, nm, tag, meta, price, speed]) => (
-          <div key={nm} className="row">
-            <div className="ic">{ic}</div>
-            <div className="body"><div className="nm">{nm} <span className={`badge${tag === 'Default' ? ' grn' : ''}`}>{tag}</span></div><div className="meta">{meta}</div></div>
-            <div className="right"><div className="top">{price}</div><div className="bot">{speed}</div></div>
-          </div>
-        ))}
+        <div className="cardhead">
+          <span className="label">Model Pool</span>
+          {usingLive
+            ? <span className={`badge${providers!.some((p) => p.available) ? ' grn' : ' red'}`}>{providers!.filter((p) => p.available).length} / {providers!.length} reachable</span>
+            : <span className="badge grn">All Reachable</span>}
+        </div>
+        {usingLive
+          ? providers!.map((p) => <ProviderRow key={p.name} p={p} />)
+          : MODEL_POOL.map(([ic, nm, tag, meta, price, speed]) => (
+            <div key={nm} className="row">
+              <div className="ic">{ic}</div>
+              <div className="body"><div className="nm">{nm} <span className={`badge${tag === 'Default' ? ' grn' : ''}`}>{tag}</span></div><div className="meta">{meta}</div></div>
+              <div className="right"><div className="top">{price}</div><div className="bot">{speed}</div></div>
+            </div>
+          ))}
       </div>
-      <div className="card tint">
-        <div className="cardhead"><span className="label">Last 3 Picks · Explained</span></div>
-        {PICKS.map(([nm, meta]) => (
-          <div key={nm} className="row">
-            <div className="ic">→</div>
-            <div className="body"><div className="nm">{nm}</div><div className="meta">{meta}</div></div>
+      {usingLive ? (
+        <div className="card tint">
+          <div className="cardhead"><span className="label">Try the Router</span></div>
+          <div className="chatinput" style={{ paddingTop: 0 }}>
+            <input
+              type="text"
+              placeholder="A sample message to route…"
+              value={msg}
+              onChange={(e) => setMsg(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') tryRoute() }}
+            />
+            <button className="send" aria-label="Route" onClick={tryRoute} disabled={routing}>↑</button>
           </div>
-        ))}
-      </div>
+          {route && (
+            <div className="row" style={{ marginTop: 8 }}>
+              <div className="ic">→</div>
+              <div className="body">
+                <div className="nm">{route.level} · {route.provider} · {route.model}</div>
+                <div className="meta">{route.reason}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="card tint">
+          <div className="cardhead"><span className="label">Last 3 Picks · Explained</span></div>
+          {PICKS.map(([nm, meta]) => (
+            <div key={nm} className="row">
+              <div className="ic">→</div>
+              <div className="body"><div className="nm">{nm}</div><div className="meta">{meta}</div></div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="card">
         <div className="cardhead"><span className="label">Spawn Templates</span><button className="more">+ Force Spawn</button></div>
         <div className="row"><div className="ic">⬢</div><div className="body"><div className="nm">Scraper · Parser · Mailer</div><div className="meta">Bulk ops family, Haiku default</div></div></div>
@@ -269,28 +405,84 @@ export function Selector() {
 }
 
 export function Credits() {
+  const { online } = useBackend()
+  const [spend, setSpend] = useState<SpendReport | null>(null)
+  const [guards, setGuards] = useState<GuardConfig | null>(null)
+
+  useEffect(() => {
+    if (!online) { setSpend(null); setGuards(null); return }
+    let cancelled = false
+    api.spend().then((s) => { if (!cancelled) setSpend(s) }).catch(() => { if (!cancelled) setSpend(null) })
+    api.guardConfig().then((g) => { if (!cancelled) setGuards(g) }).catch(() => { if (!cancelled) setGuards(null) })
+    return () => { cancelled = true }
+  }, [online])
+
+  const usingLive = online && spend !== null
+
   return (
     <div className="content" style={{ maxWidth: 760 }}>
       <h1 className="bigtitle">Telemetry &amp; Burn</h1>
       <p className="subnote lead">Live spend across providers. Caps are hard, kills are automatic.</p>
       <div className="card">
-        <div className="cardhead"><span className="label">July Burn · $1,928</span><button className="more">Export →</button></div>
-        {BURN.map(([nm, note, pct, hot]) => (
-          <div key={nm} className="bar">
-            <div className="lbl"><b>{nm}</b><span>{note}</span></div>
-            <div className="track"><div className={`fill${hot ? ' hot' : ''}`} style={{ width: `${pct}%` }} /></div>
-          </div>
-        ))}
+        <div className="cardhead">
+          <span className="label">{usingLive ? `Today's Burn · $${spend!.total_today.toFixed(2)}` : 'July Burn · $1,928'}</span>
+        </div>
+        {usingLive ? (
+          Object.keys(spend!.by_provider).length === 0 ? (
+            <div className="row"><div className="body"><div className="meta">No spend yet today.</div></div></div>
+          ) : Object.entries(spend!.by_provider).map(([name, amt]) => {
+            const pct = spend!.total_today > 0 ? Math.min(100, (amt / spend!.total_today) * 100) : 0
+            return (
+              <div key={name} className="bar">
+                <div className="lbl"><b>{name}</b><span>${amt.toFixed(2)}</span></div>
+                <div className="track"><div className={`fill${pct > 80 ? ' hot' : ''}`} style={{ width: `${pct}%` }} /></div>
+              </div>
+            )
+          })
+        ) : (
+          BURN.map(([nm, note, pct, hot]) => (
+            <div key={nm} className="bar">
+              <div className="lbl"><b>{nm}</b><span>{note}</span></div>
+              <div className="track"><div className={`fill${hot ? ' hot' : ''}`} style={{ width: `${pct}%` }} /></div>
+            </div>
+          ))
+        )}
       </div>
       <div className="card tint">
         <div className="cardhead"><span className="label">Guards</span></div>
-        {GUARDS.map((g) => (
-          <div key={g.nm} className="row">
-            <div className="ic">{g.ic}</div>
-            <div className="body"><div className="nm">{g.nm}</div><div className="meta">{g.meta}</div></div>
-            <span className={`badge ${g.badge[0]}`}>{g.badge[1]}</span>
-          </div>
-        ))}
+        {guards ? (
+          <>
+            <div className="row">
+              <div className="ic">◍</div>
+              <div className="body"><div className="nm">Daily cap · ${guards.daily_budget.toFixed(2)}</div><div className="meta">Per task default · ${guards.per_task_budget_default.toFixed(2)}</div></div>
+              <span className="badge">Rule</span>
+            </div>
+            {guards.custom_rules.length === 0 ? (
+              <div className="row"><div className="body"><div className="meta">No custom rules — add one in Settings.</div></div></div>
+            ) : guards.custom_rules.map((r) => (
+              <div key={r.id} className="row">
+                <div className="ic">{r.enabled ? '✓' : '·'}</div>
+                <div className="body">
+                  <div className="nm">{r.name}</div>
+                  <div className="meta">
+                    {r.keyword ? `matches "${r.keyword}" · ` : 'all tasks · '}
+                    {r.max_spend != null ? `caps at $${r.max_spend.toFixed(2)}` : ''}
+                    {r.require_approval ? ' · always requires approval' : ''}
+                  </div>
+                </div>
+                <span className={`badge${r.enabled ? '' : ' red'}`}>{r.enabled ? 'Active' : 'Disabled'}</span>
+              </div>
+            ))}
+          </>
+        ) : (
+          GUARDS.map((g) => (
+            <div key={g.nm} className="row">
+              <div className="ic">{g.ic}</div>
+              <div className="body"><div className="nm">{g.nm}</div><div className="meta">{g.meta}</div></div>
+              <span className={`badge ${g.badge[0]}`}>{g.badge[1]}</span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   )

@@ -26,43 +26,52 @@ from "shell + scaffold that runs" to "daily driver." Pairs with `BACKEND_TASKS.m
 
 ---
 
-## Phase 2 — "Make it real" (the next pass)
+## Phase 2 — "Make it real"
+
+**Status (2026-09-24): done**, 2.1–2.7 below. See `docs/BACKEND_TASKS.md` for the backend
+implementation notes and its "Known honest constraints" for what's still unverified (real
+Whisper/Piper, in particular — only tested against the dummy voice path in this environment).
 
 Ordered so each step is independently shippable. Frontend and backend halves noted.
 
-### 2.1 · Push-to-talk voice
-- **Backend** (built): `/ws/voice` handles audio → VAD → Whisper → text, and text → Piper → audio,
-  with two voice profiles (Dexter warm / Anthony cold). Needs `torch`, `faster-whisper`, `piper-tts` installed.
-- **Frontend** (to build): a mic button component (`src/components/MicButton.tsx` + `src/lib/voice.ts`).
-  Hold to record → stream PCM to `/ws/voice` → drop the transcription into the chat/command input →
-  play the TTS reply. Integrate into `Chat.tsx` and the Home command bar. Graceful "voice not installed"
-  state when the pipeline reports dummy components via `/api/status`.
+### 2.1 · Push-to-talk voice — done
+- **Backend**: `/ws/voice` unchanged for VAD/STT/TTS, plus a new client → `{"type":"commit"}`
+  message that finalizes a turn immediately on button release. Needed because a real (non-dummy)
+  VAD only fires on detected *silence* — once the client stops streaming chunks, it would never
+  see that silence and would hang forever. The old dummy-VAD-only path (which fires on the very
+  first chunk) masked this gap; `commit` fixes it for when torch/Whisper are actually installed.
+- **Frontend**: `src/lib/voice.ts` (raw PCM16 @16kHz capture via ScriptProcessorNode, TTS playback
+  buffers the full reply before playing — simpler and gap-free vs. per-chunk scheduling) +
+  `src/components/MicButton.tsx` (hold-to-record, shows a disabled "voice not installed" state
+  from `/api/status`'s capabilities). Wired into `Chat.tsx` and `OrchHome`'s command bar.
 
-### 2.2 · Real executor work
-- See `BACKEND_TASKS.md` P1. Wire `shadow/executor.py` to `tools/caller.run_with_tools`.
-- **Frontend**: the Ops Feed + Live Tasks already poll `/api/shadow/tasks` — no change needed;
-  results just become real. Guard trips already surface as gates + toasts.
+### 2.2 · Real executor work — done (`docs/BACKEND_TASKS.md` P1)
+- Ops Feed + Live Tasks needed no frontend change, as predicted — results are just real now.
 
-### 2.3 · Projects / Tasks on Postgres
-- **Backend**: P3 — tables + `/api/projects`, `/api/tasks`.
-- **Frontend**: `src/screens/Orch.tsx` — swap the `PROJECTS` / `TASKS_TODAY` mock imports for live
-  fetches; keep the exact card/row markup. Team stays mock until real integrations.
+### 2.3 · Projects / Tasks on Postgres — done (P3)
+- `src/screens/Orch.tsx`'s `Projects()`/`Tasks()` use live data when online, original mock
+  markup/data kept as the offline fallback. Added inline create (project name, task title) and
+  per-task delegate-to-Anthony, since a real CRUD screen needs a way to add records, not just view.
 
-### 2.4 · Briefing generator
-- **Backend**: P4 — `/api/briefing/today`.
-- **Frontend**: `OrchHome` briefing headline reads from it when online; keeps the canned line offline.
+### 2.4 · Briefing generator — done (P4)
+- `OrchHome` reads `/api/briefing/today` when online (real stats + chips), canned line offline.
 
-### 2.5 · File / URL attach
-- **Backend**: P5 — ingest → embed → memory.
-- **Frontend**: `Chat.tsx` already has the attach button (local-only today) — point it at `/api/files/*`.
+### 2.5 · File / URL attach — done (P5)
+- `Chat.tsx`'s attach button now branches: an image stays a local-only preview (no vision model
+  wired into the Brain), a document (pdf/txt/md/csv) goes to `/api/files/upload` for real —
+  extracted, embedded, and it becomes usable memory via chat's recall (P2), not just a write-only
+  store. Settings → "Ingested Documents" lists/deletes and adds by URL.
 
-### 2.6 · Selector + Burn live
-- **Frontend only**: `src/screens/Shadow.tsx` — `Selector` reads `/api/escalation/providers` + `/route`
-  dry-runs; `Credits` (Burn) reads `/api/escalation/spend`. Backend already serves both.
+### 2.6 · Selector + Burn live — done
+- `Selector` shows real provider availability + an interactive "Try the Router" dry-run tester
+  (the static "Last 3 Picks" couldn't be made real — nothing logs past picks with reasons — so
+  it's replaced with a live tool instead of a fabricated history). `Credits` (Burn) shows real
+  per-provider spend and the real guard config/custom rules, both offline-fallback to the mocks.
 
-### 2.7 · Guard-config panel
-- **Backend**: P6 — guards CRUD.
-- **Frontend**: a section in the Settings overlay to raise/lower caps and add rules.
+### 2.7 · Guard-config panel — done (P6)
+- Settings → Guardrails: edit daily/per-task/high-cost/long-running caps (takes effect on the
+  next spawned task, no restart) and add/remove custom rules (keyword match, spend cap, or
+  always-require-approval — declarative, not arbitrary code).
 
 ---
 

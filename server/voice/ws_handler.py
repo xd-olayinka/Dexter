@@ -43,6 +43,20 @@ async def voice_websocket(websocket: WebSocket, protocol: str = "orch"):
     audio_buffer: list[bytes] = []
     pipeline.vad.reset()
 
+    async def _finalize_turn() -> None:
+        nonlocal audio_buffer
+        if not audio_buffer:
+            return
+        await websocket.send_text(json.dumps({"type": "processing"}))
+        text, _ = await pipeline.process_audio_turn(audio_buffer, proto)
+        await websocket.send_text(json.dumps({
+            "type": "transcription",
+            "text": text,
+            "protocol": proto.value,
+        }))
+        audio_buffer = []
+        pipeline.vad.reset()
+
     try:
         while True:
             message = await websocket.receive()
@@ -52,25 +66,20 @@ async def voice_websocket(websocket: WebSocket, protocol: str = "orch"):
                 audio_buffer.append(chunk)
 
                 vad_result = pipeline.vad.process_chunk(chunk)
-
-                if vad_result["speech_ended"] and audio_buffer:
-                    await websocket.send_text(json.dumps({"type": "processing"}))
-
-                    text, _ = await pipeline.process_audio_turn(audio_buffer, proto)
-
-                    await websocket.send_text(json.dumps({
-                        "type": "transcription",
-                        "text": text,
-                        "protocol": proto.value,
-                    }))
-
-                    audio_buffer = []
-                    pipeline.vad.reset()
+                if vad_result["speech_ended"]:
+                    await _finalize_turn()
 
             elif "text" in message and message["text"]:
                 data = json.loads(message["text"])
 
-                if data.get("type") == "synthesize":
+                if data.get("type") == "commit":
+                    # Push-to-talk release: the client has stopped sending chunks, so a
+                    # real (non-dummy) VAD would never see the silence needed to trip
+                    # speech_ended on its own — finalize whatever's buffered right now,
+                    # regardless of VAD state.
+                    await _finalize_turn()
+
+                elif data.get("type") == "synthesize":
                     response_text = data.get("text", "")
                     speak_protocol = Protocol(data.get("protocol", proto.value))
 

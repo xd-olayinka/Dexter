@@ -5,6 +5,7 @@ import httpx
 from fastapi import APIRouter, Request
 
 from config import settings
+from tools.prometheus_tools import get_client as get_prometheus_client
 
 log = logging.getLogger("dexter.status")
 
@@ -80,4 +81,12 @@ async def system_status(request: Request):
             "server": settings.ntfy_server,
         },
         "providers": provider_status,
+        "prometheus": await _check_prometheus(),
     }
+
+
+async def _check_prometheus() -> dict:
+    client = get_prometheus_client()
+    if client is None:
+        return {"configured": False, "connected": False, "url": None}
+    return {"configured": True, "connected": await client.health(timeout=3.0), "url": client.url}
