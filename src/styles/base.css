@@ -336,7 +336,7 @@ button { font-family: inherit; color: inherit; }
 .msg .av { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; flex: none; border: 1.5px solid var(--heat); background: #FFE4CC; }
 .shadow-mode .msg .av { border-color: var(--gold); background: var(--sh-surface-2); }
 .msg .av img { width: 100%; height: 100%; object-fit: cover; }
-.msg .bub {
+.msg .bub { white-space: pre-wrap;
   background: var(--card-bg); border: 1px solid var(--line);
   border-radius: 16px; border-top-left-radius: 5px; padding: 11px 14px; font-size: 13px; line-height: 1.5;
 }

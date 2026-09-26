@@ -241,3 +241,19 @@ CREATE TABLE IF NOT EXISTS notebooks (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS notebook_id TEXT;
+
+-- ── Full pass · spawn templates, presence (server/ops.py) ─────────────
+CREATE TABLE IF NOT EXISTS spawn_templates (
+    id TEXT PRIMARY KEY,
+    business_id TEXT,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    tier INTEGER,
+    budget_cap NUMERIC,
+    minutes_saved INTEGER,
+    priority TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_spawn_templates_business ON spawn_templates(business_id);
+-- Team presence: bumped (at most once a minute) whenever a session makes an authenticated call.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;

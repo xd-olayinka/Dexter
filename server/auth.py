@@ -128,6 +128,12 @@ async def _resolve_session(token: str) -> CurrentContext | None:
                 (token_hash,),
             )
             row = await cur.fetchone()
+        if row and row[3] is not None:
+            # presence for the Team screen — at most one write a minute per session
+            await conn.execute(
+                "UPDATE sessions SET last_seen_at = now() WHERE token_hash = %s AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')",
+                (token_hash,),
+            )
     if not row or row[3] is None:
         return None
     return CurrentContext(user_id=row[0], email=row[1], name=row[2] or "", business_id=row[3], business_name=row[4], role=row[5] or "member")
@@ -404,6 +410,8 @@ class MemberOut(BaseModel):
     name: str
     role: str
     joined_at: str
+    last_seen_at: str | None = None
+    online: bool = False
 
 
 @router.get("/members", response_model=list[MemberOut])
@@ -414,13 +422,23 @@ async def list_members(ctx: CurrentContext = Depends(current_context)):
         return []
     async with pool.connection() as conn:
         cur = await conn.execute(
-            """SELECT u.id, u.email, u.name, bm.role, bm.joined_at
+            """SELECT u.id, u.email, u.name, bm.role, bm.joined_at,
+                      (SELECT max(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id AND s.expires_at > now())
                FROM business_members bm JOIN users u ON u.id = bm.user_id
                WHERE bm.business_id = %s ORDER BY bm.joined_at ASC""",
             (ctx.business_id,),
         )
         rows = await cur.fetchall()
-    return [MemberOut(id=r[0], email=r[1], name=r[2] or "", role=r[3], joined_at=r[4].isoformat()) for r in rows]
+    now = datetime.now(timezone.utc)
+    return [
+        MemberOut(
+            id=r[0], email=r[1], name=r[2] or "", role=r[3], joined_at=r[4].isoformat(),
+            last_seen_at=r[5].isoformat() if r[5] else None,
+            # the caller is online by definition; everyone else if seen in the last 5 minutes
+            online=r[0] == ctx.user_id or bool(r[5] and (now - r[5]).total_seconds() < 300),
+        )
+        for r in rows
+    ]
 
 
 # ---------------------------------------------------------------- multi-business switching

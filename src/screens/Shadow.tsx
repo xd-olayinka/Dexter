@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { RUN_LOG, GATES, SWARM, MODEL_POOL, PICKS, BURN, GUARDS } from '../data'
 import operative from '../assets/img/operative.png'
-import { api, ApiError, type AgentRecord, type GuardConfig, type LedgerSummary, type Selection, type TaskInfo } from '../lib/api'
+import { api, ApiError, type AgentRecord, type GuardConfig, type LedgerSummary, type Priority, type RunLogEvent, type Selection, type SpawnTemplate, type TaskInfo } from '../lib/api'
 import { useBackend } from '../lib/backend'
 import { useToast } from '../lib/toast'
 
@@ -16,6 +16,15 @@ function statusBadgeCls(status: TaskInfo['status']): string {
   return '' // queued, draft, killed — dim/default
 }
 
+const RUN_ICON: Record<string, [string, string]> = {
+  spawn: ['⬢', ''], done: ['✓', 'grn'], killed: ['✕', 'red'], gated: ['⏸', 'ylw'], tool: ['⚙', ''], tool_error: ['⚠', 'red'], alert: ['⚠', 'red'],
+}
+
+function hhmm(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 export function ShadowOps() {
   const { online, gates, budget, refreshGates } = useBackend()
   const toast = useToast()
@@ -23,7 +32,11 @@ export function ShadowOps() {
   const [tier, setTier] = useState('')
   const [minutes, setMinutes] = useState('')
   const [revenue, setRevenue] = useState('')
+  const [priority, setPriority] = useState<Priority>('normal')
   const [tasks, setTasks] = useState<TaskInfo[]>([])
+  const [runLog, setRunLog] = useState<RunLogEvent[] | null>(null)
+  const [held, setHeld] = useState(false)
+  const [templates, setTemplates] = useState<SpawnTemplate[]>([])
   const mountedRef = useRef(true)
 
   useEffect(() => {
@@ -33,19 +46,64 @@ export function ShadowOps() {
 
   async function loadTasks() {
     try {
-      const t = await api.tasks()
-      if (mountedRef.current) setTasks(t)
+      const [t, log] = await Promise.all([api.tasks(), api.runLog(30)])
+      if (mountedRef.current) { setTasks(t); setRunLog(log) }
     } catch {
       /* transient — status poll owns the online flag */
     }
   }
 
+  async function loadTemplates() {
+    try { setTemplates(await api.templates()) } catch { /* no db */ }
+  }
+
   useEffect(() => {
-    if (!online) return
+    if (!online) { setRunLog(null); return }
     loadTasks()
+    loadTemplates()
+    api.hold().then((h) => setHeld(h.on)).catch(() => {})
     const t = setInterval(loadTasks, 8000)
     return () => clearInterval(t)
   }, [online])
+
+  async function toggleHold() {
+    try {
+      const r = await api.setHold(!held)
+      setHeld(r.on)
+      toast.push({ title: r.on ? 'Hold on' : 'Hold released', body: r.on ? 'New tasks wait at a gate until you approve them' : 'New tasks run immediately again', kind: r.on ? 'warn' : 'good' })
+    } catch (e) {
+      toast.push({ title: 'Hold failed', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  async function saveTemplate() {
+    const text = cmd.trim()
+    if (!text) { toast.push({ title: 'Type the task first', body: 'The command becomes the template name', kind: 'info' }); return }
+    try {
+      await api.createTemplate({
+        name: text, description: '', tier: tier ? Number(tier) : null, budget_cap: null,
+        minutes_saved: minutes ? Number(minutes) : null, priority,
+      })
+      toast.push({ title: 'Template saved', body: text, kind: 'good' })
+      loadTemplates()
+    } catch (e) {
+      toast.push({ title: 'Could not save template', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  async function spawnFrom(t: SpawnTemplate) {
+    try {
+      const task = await api.spawnTemplate(t.id)
+      toast.push({ title: 'Executor spawned', body: `${t.name}${task.metadata?.model_route ? ` → ${task.metadata.model_route}` : ''}`, kind: 'good' })
+      loadTasks()
+    } catch (e) {
+      toast.push({ title: 'Spawn failed', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  async function removeTemplate(t: SpawnTemplate) {
+    try { await api.deleteTemplate(t.id); loadTemplates() } catch (e) { toast.push({ title: 'Delete failed', body: errMsg(e), kind: 'warn' }) }
+  }
 
   async function spawn() {
     const text = cmd.trim()
@@ -59,6 +117,7 @@ export function ShadowOps() {
         tier: tier ? Number(tier) : undefined,
         minutes_saved: minutes ? Number(minutes) : undefined,
         revenue_value: revenue ? Number(revenue) : undefined,
+        priority,
       })
       const route = spawned.metadata?.model_route
       toast.push({ title: 'Executor spawned', body: route ? `${text} → ${route}` : text, kind: 'good' })
@@ -128,8 +187,30 @@ export function ShadowOps() {
           </select>
           <input className="set-input" style={{ width: 120 }} type="number" min="0" placeholder="min saved" value={minutes} onChange={(e) => setMinutes(e.target.value)} title="Your estimate of human minutes this saves (Home: hours reclaimed)" />
           <input className="set-input" style={{ width: 120 }} type="number" min="0" placeholder="revenue $" value={revenue} onChange={(e) => setRevenue(e.target.value)} title="Revenue this enables, if any (Home: revenue enabled)" />
+          <select className="set-input" style={{ width: 'auto' }} value={priority} onChange={(e) => setPriority(e.target.value as Priority)} title="Mission priority — the task list sorts by it">
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="normal">Normal</option>
+            <option value="low">Low</option>
+          </select>
           <button className="p" onClick={spawn}>⬢ Spawn</button>
+          {online && <button className="p" onClick={saveTemplate} title="Save this command and its settings as a one-click template">Save template</button>}
+          {online && (
+            <button className={`p${held ? ' on' : ''}`} onClick={toggleHold} title="While on, every new task waits at an approval gate">
+              {held ? '⏸ Hold on · release' : 'Hold'}
+            </button>
+          )}
         </div>
+        {online && templates.length > 0 && (
+          <div className="pillrow" style={{ paddingTop: 8, gap: 6, flexWrap: 'wrap' }}>
+            {templates.map((t) => (
+              <span key={t.id} style={{ display: 'inline-flex', gap: 2 }}>
+                <button className="p" onClick={() => spawnFrom(t)} title={`Spawn: tier ${t.tier ?? 'auto'} · ${t.priority ?? 'normal'} priority`}>▸ {t.name}</button>
+                <button className="p" onClick={() => removeTemplate(t)} aria-label={`Delete template ${t.name}`} title="Delete template">×</button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       <div className="eyebrow">Ops Feed · Encrypted</div>
       {online ? (
@@ -170,8 +251,21 @@ export function ShadowOps() {
         </div>
       </div>
       <div className="card">
-        <div className="cardhead"><span className="label">Run Log · Live</span><button className="more">Stream →</button></div>
-        {RUN_LOG.map(([ic, nm, meta, tag, cls]) => (
+        <div className="cardhead"><span className="label">Run Log · {runLog ? 'Live' : 'Demo'}</span></div>
+        {runLog ? (
+          runLog.length === 0 ? (
+            <div className="row"><div className="body"><div className="meta">Nothing has run yet.</div></div></div>
+          ) : runLog.map((e, i) => {
+            const [ic, cls] = RUN_ICON[e.kind] ?? ['•', '']
+            return (
+              <div key={`${e.at}-${i}`} className="row">
+                <div className="ic">{ic}</div>
+                <div className="body"><div className="nm">{e.title}</div><div className="meta">{hhmm(e.at)} · {e.detail}</div></div>
+                <span className={`badge ${cls}`}>{e.kind.replace('_', ' ')}</span>
+              </div>
+            )
+          })
+        ) : RUN_LOG.map(([ic, nm, meta, tag, cls]) => (
           <div key={nm} className="row">
             <div className="ic">{ic}</div>
             <div className="body"><div className="nm">{nm}</div><div className="meta">{meta}</div></div>
@@ -192,6 +286,9 @@ export function ShadowOps() {
                   <div className="nm">{t.title}</div>
                   <div className="meta">${t.spend.toFixed(4)} spent{t.budget_cap != null ? ` · cap $${t.budget_cap.toFixed(2)}` : ''}{t.metadata?.model_route ? ` · ${t.metadata.model_route}` : ''}{t.error ? ` · ${t.error}` : ''}</div>
                 </div>
+                {t.metadata?.priority && t.metadata.priority !== 'normal' && (
+                  <span className={`badge ${t.metadata.priority === 'critical' ? 'red' : t.metadata.priority === 'high' ? 'ylw' : ''}`}>{t.metadata.priority}</span>
+                )}
                 <span className={`badge ${statusBadgeCls(t.status)}`}>{t.status}</span>
                 {!terminal && <button className="del" onClick={() => kill(t.id)}>Kill</button>}
               </div>

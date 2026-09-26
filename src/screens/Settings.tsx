@@ -1,10 +1,10 @@
 // Settings & Connections overlay — read-only status of every backend
 // system, cloud escalation keys + spend, honest "planned" integration
-// stubs, the Archive teaser, and the few things a user can actually
+// stubs, standing preferences, and the few things a user can actually
 // change (backend URL, test push). No system here is faked: everything
 // with a live dot is read straight from useBackend()/api.status().
 import { useEffect, useState } from 'react'
-import { api, ApiError, setApiUrl, API_URL, type ArchiveAnswer, type BriefingScript, type DocumentRecord, type GuardConfig, type Notebook, type SpendReport } from '../lib/api'
+import { api, ApiError, setApiUrl, API_URL, type ArchiveAnswer, type BriefingScript, type DocumentRecord, type GuardConfig, type Notebook, type SpendReport, type StandingFact } from '../lib/api'
 import { useBackend } from '../lib/backend'
 import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/auth'
@@ -189,7 +189,7 @@ function GuardsCard({ online }: { online: boolean }) {
 
 // ---------- Ingested documents (Build Plan 2.5 · P5) ----------
 
-function DocumentsCard({ online }: { online: boolean }) {
+export function DocumentsCard({ online }: { online: boolean }) {
   const toast = useToast()
   const [docs, setDocs] = useState<DocumentRecord[] | null>(null)
   const [url, setUrl] = useState('')
@@ -257,7 +257,7 @@ function DocumentsCard({ online }: { online: boolean }) {
 
 // ---------- Archive (Phase 6 · v1) ----------
 
-function ArchiveCard({ online }: { online: boolean }) {
+export function ArchiveCard({ online }: { online: boolean }) {
   const toast = useToast()
   const [notebooks, setNotebooks] = useState<Notebook[] | null>(null)
   const [title, setTitle] = useState('')
@@ -411,6 +411,43 @@ const INTEGRATIONS: Integration[] = [
   { icon: '◇', name: 'Codex seat', blurb: 'Second engineering executor, CLI-driven' },
   { icon: '▸', name: 'Cursor', blurb: 'Background agents for in-editor work' },
 ]
+
+// ---------- Standing preferences (the FactStore's writer: chat.py detects "remember…/always…") ----------
+function StandingFactsCard({ online }: { online: boolean }) {
+  const toast = useToast()
+  const [facts, setFacts] = useState<StandingFact[] | null>(null)
+
+  useEffect(() => {
+    if (!online) { setFacts(null); return }
+    api.standingFacts().then(setFacts).catch(() => setFacts([]))
+  }, [online])
+
+  async function remove(f: StandingFact) {
+    try {
+      await api.deleteStandingFact(f.key)
+      setFacts((xs) => (xs ?? []).filter((x) => x.key !== f.key))
+    } catch (e) {
+      toast.push({ title: 'Could not forget that', body: errMsg(e), kind: 'warn' })
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="cardhead"><span className="label">Standing preferences{facts ? ` · ${facts.length}` : ''}</span></div>
+      {!online ? (
+        <div className="row"><div className="body"><div className="meta">Connect the backend to see what Dexter remembers.</div></div></div>
+      ) : !facts || facts.length === 0 ? (
+        <div className="row"><div className="body"><div className="meta">None yet. Tell Dexter in chat — "remember that…", "always…", "never…", "from now on…" — and it keeps to it in every conversation.</div></div></div>
+      ) : facts.map((f) => (
+        <div key={f.key} className="row">
+          <div className="ic">✦</div>
+          <div className="body"><div className="nm">{f.value}</div></div>
+          <button className="del" onClick={() => remove(f)}>Forget</button>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function Settings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { online, checked, status } = useBackend()
@@ -578,8 +615,8 @@ export default function Settings({ open, onClose }: { open: boolean; onClose: ()
           </div>
 
           <GuardsCard online={online} />
-          <DocumentsCard online={online} />
-          <ArchiveCard online={online} />
+          <StandingFactsCard online={online} />
+          <p className="subnote">Documents and notebooks live on the Archive tab.</p>
 
           {/* ---------- Integrations ---------- */}
           <div className="card">

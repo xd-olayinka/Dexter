@@ -12,6 +12,12 @@ One app, two operatives, two faces. Toggle between them any time.
 
 ## Status
 
+**2026-09-26 · line-by-line pass.** See `docs/PHASE_3_4_PLAN.md` §9. The Run Log, chat quick actions
+and team load are live instead of demo copy; **Hold**, **spawn templates**, **mission priority** and
+**standing preferences** ("remember…", "always…") exist end to end; budget is per business; Team shows
+presence, Prometheus load and an agents routing/throughput card; the **Archive** has its own tab with
+embedding-boosted retrieval; URL ingest renders JS pages with Playwright when installed.
+
 **2026-09-25 · vision gaps closed (non-integration).** See `docs/PHASE_3_4_PLAN.md` §8. Selector Core
 now really picks the cheapest capable model per task across Ollama, DeepSeek, Groq, Anthropic
 (Haiku 4.5 / Sonnet 5 / Opus 5, Fable 5.1 opt-in) and OpenAI, and Anthony's tool loop runs on any

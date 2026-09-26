@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from models import Task
-from shadow.budget import BudgetTracker
+from models import BudgetSnapshot
 from shadow.executor import ExecutorManager
 from shadow.guard_config import GuardConfig, guard_config_store
 from shadow.agents_store import list_agents
@@ -52,6 +52,7 @@ class DelegateRequest(BaseModel):
     tier: int | None = None            # 1 fast · 2 standard · 3 frontier — overrides the classifier
     minutes_saved: int | None = None   # Commander's estimate of human time this saves (Home: hours reclaimed)
     revenue_value: float | None = None  # revenue this task enables, if any (Home: revenue enabled)
+    priority: str | None = None        # mission priority: critical · high · normal · low (Shadow sorts by it)
 
 
 class RejectRequest(BaseModel):
@@ -69,6 +70,7 @@ async def delegate_task(req: DelegateRequest, request: Request, ctx: CurrentCont
         metadata={
             "business_id": ctx.business_id, "owner_user_id": ctx.user_id, "tier": req.tier,
             "minutes_saved": req.minutes_saved, "revenue_value": req.revenue_value,
+            "priority": req.priority or "normal",
         },
     )
     await spawn_selected(request.app, task, ctx.business_id, ctx.user_id, req.tier)
@@ -97,6 +99,9 @@ async def spawn_selected(app, task: Task, business_id: str | None, owner_user_id
                 work_fn = make_llm_work_fn(brain)
                 model_route = f"{active['provider']}:{active['model']}"
     task.metadata["model_route"] = model_route
+    from ops import is_on_hold
+    if is_on_hold(business_id):
+        task.metadata["hold"] = True
     await get_manager().spawn(task, work_fn=work_fn, owner_user_id=owner_user_id, business_id=business_id, model_route=model_route)
 
 
@@ -127,7 +132,10 @@ async def get_agents(ctx: CurrentContext = Depends(current_context)):
 @router.get("/tasks")
 async def list_tasks(ctx: CurrentContext = Depends(current_context)):
     mgr = get_manager()
-    return [t.model_dump(mode="json") for t in mgr.list_all() if _task_in_business(t, ctx)]
+    rank = {"critical": 0, "high": 1, "normal": 2, "low": 3}
+    mine = [t for t in mgr.list_all() if _task_in_business(t, ctx)]
+    mine.sort(key=lambda t: rank.get(t.metadata.get("priority") or "normal", 2))  # stable: keeps spawn order within a priority
+    return [t.model_dump(mode="json") for t in mine]
 
 
 @router.get("/tasks/{task_id}")
@@ -209,18 +217,22 @@ async def create_test_gate():
 
 
 @router.get("/budget")
-async def get_budget():
+async def get_budget(ctx: CurrentContext = Depends(current_context)):
+    """This business's spend today against the daily cap — from the persistent ledger, so
+    one business's agents never count against another's, and it survives restarts."""
+    import ledger
+
     mgr = get_manager()
     config = await guard_config_store.get()
-    active = await mgr.list_active()
-    tracker = BudgetTracker(
-        task_id="__global__",
-        task_budget=0,
-        daily_budget=config.daily_budget,
-    )
-    snapshot = tracker.get_snapshot(
+    mine = [t for t in mgr.list_all() if t.metadata.get("business_id") == ctx.business_id]
+    active = [t for t in mine if t.status.value in ("queued", "running", "gated")]
+    spent = (await ledger.totals(ctx.business_id)).today
+    snapshot = BudgetSnapshot(
+        daily_limit=config.daily_budget,
+        daily_spent=round(spent, 6),
+        daily_remaining=max(config.daily_budget - spent, 0.0),
         active_tasks=len(active),
-        total_tasks_today=len(mgr.list_all()),
+        total_tasks_today=len(mine),
     )
     return snapshot.model_dump(mode="json")
 

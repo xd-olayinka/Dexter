@@ -34,6 +34,7 @@ from metrics import router as metrics_router
 from dependencies import router as dependencies_router
 from ledger import router as ledger_router
 from archive import router as archive_router
+from ops import router as ops_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("dexter")
@@ -132,6 +133,7 @@ app.include_router(metrics_router)
 app.include_router(dependencies_router)
 app.include_router(ledger_router)
 app.include_router(archive_router)
+app.include_router(ops_router)
 
 
 @app.get("/")

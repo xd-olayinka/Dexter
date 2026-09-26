@@ -16,6 +16,7 @@ export type ChatWsFrame =
   | { type: 'chunk'; content: string }
   | { type: 'done'; message: ChatWsMessage }
   | { type: 'error'; content: string }
+  | { type: 'remembered'; content: string }
 
 export interface ChatWsHandlers {
   onOpen?: () => void
@@ -41,7 +42,7 @@ function isChatWsFrame(v: unknown): v is ChatWsFrame {
   if (typeof v !== 'object' || v === null) return false
   const f = v as Record<string, unknown>
   if (f.type === 'chunk') return typeof f.content === 'string'
-  if (f.type === 'error') return typeof f.content === 'string'
+  if (f.type === 'error' || f.type === 'remembered') return typeof f.content === 'string'
   if (f.type === 'done') return isChatWsMessage(f.message)
   return false
 }

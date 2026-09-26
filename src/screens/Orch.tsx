@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { PROJECTS, TASKS_TODAY, TASKS_UPCOMING, TEAM, LOAD } from '../data'
 import heroOrch from '../assets/img/hero-orch.jpg'
-import { api, ApiError, type BriefingToday, type DependencyMap, type MemberInfo, type MetricsSummary, type ProjectRecord, type TaskRecord } from '../lib/api'
+import { api, ApiError, type BriefingToday, type DependencyMap, type MemberInfo, type MetricsSummary, type ProjectRecord, type TaskRecord, type TeamWorkload, type AgentRecord, type LedgerSummary } from '../lib/api'
 import { useBackend } from '../lib/backend'
 import { useToast } from '../lib/toast'
 import { MicButton } from '../components/MicButton'
@@ -501,6 +501,87 @@ function initialsOf(name: string, email: string): string {
   return (parts.length > 1 ? parts[0][0] + parts[1][0] : src.slice(0, 2)).toUpperCase()
 }
 
+/** The Orchestrator's view of its agents: where this month's spend was routed (ledger
+ *  by_model_month) and throughput — finished tasks today and over the last 7 days. */
+function AgentsCard() {
+  const [agents, setAgents] = useState<AgentRecord[] | null>(null)
+  const [ledger, setLedger] = useState<LedgerSummary | null>(null)
+  useEffect(() => {
+    api.agents().then(setAgents).catch(() => setAgents([]))
+    api.ledger().then(setLedger).catch(() => setLedger(null))
+  }, [])
+  if (!agents) return null
+  const now = Date.now()
+  const done = agents.filter((a) => a.status === 'done' && a.completed_at)
+  const today = done.filter((a) => now - Date.parse(a.completed_at!) < 86_400_000).length
+  const week = done.filter((a) => now - Date.parse(a.completed_at!) < 7 * 86_400_000).length
+  const running = agents.filter((a) => a.status === 'running' || a.status === 'gated' || a.status === 'queued').length
+  const split = Object.entries(ledger?.totals.by_model_month ?? {}).sort((a, b) => b[1] - a[1])
+  const total = split.reduce((n, [, v]) => n + v, 0)
+  return (
+    <div className="card">
+      <div className="cardhead"><span className="label">Agents · {agents.length}</span><span className="badge">{running} active</span></div>
+      <div className="row">
+        <div className="ic">⇶</div>
+        <div className="body">
+          <div className="nm">Throughput</div>
+          <div className="meta">{today} finished today · {week} this week · {(week / 7).toFixed(1)}/day</div>
+        </div>
+      </div>
+      {split.length === 0 ? (
+        <div className="row"><div className="body"><div className="meta">No model spend routed this month yet.</div></div></div>
+      ) : split.map(([model, spend]) => {
+        const pct = total ? (spend / total) * 100 : 0
+        return (
+          <div key={model} className="bar">
+            <div className="lbl"><b>{model}</b><span>${spend.toFixed(2)} · {Math.round(pct)}%</span></div>
+            <div className="track"><div className="fill" style={{ width: `${pct}%` }} /></div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+interface WorkloadMember { userId: string; name?: string; committed: number; completed: number; capacity: number; pct: number }
+
+/** Team load from Prometheus (list_teams + get_workload over the MCP bridge) — the active
+ *  cycle's committed points against each person's capacity. */
+function WorkloadCard({ workload }: { workload: TeamWorkload | null }) {
+  if (!workload || !workload.connected) {
+    return (
+      <p className="subnote">
+        Team load comes from Prometheus — connect it in Settings (PROMETHEUS_MCP_URL + token) and
+        each person's committed vs. capacity for the active cycle shows here.
+      </p>
+    )
+  }
+  if (workload.error) return <p className="subnote">Prometheus didn't answer: {workload.error}</p>
+  const teams = workload.teams.map((t) => ({ team: t.team, members: (Array.isArray(t.members) ? t.members : []) as WorkloadMember[] }))
+  if (!teams.some((t) => t.members.length)) return <p className="subnote">Prometheus is connected, but no team has an active cycle with capacity set.</p>
+  return (
+    <>
+      {teams.filter((t) => t.members.length).map((t) => (
+        <div key={t.team} className="card tint">
+          <div className="cardhead"><span className="label">Load · {t.team}</span><span className="badge grn">Prometheus</span></div>
+          {t.members.map((m) => {
+            const pct = m.capacity ? Math.min(100, m.pct) : 0
+            return (
+              <div key={m.userId} className="bar">
+                <div className="lbl">
+                  <b>{m.name ?? m.userId}</b>
+                  <span>{m.capacity ? `${m.committed}/${m.capacity} pts · ${m.pct}%` : `${m.committed} pts · no capacity set`}</span>
+                </div>
+                <div className="track"><div className={`fill${m.pct > 100 ? ' hot' : ''}`} style={{ width: `${pct}%` }} /></div>
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </>
+  )
+}
+
 export function Team() {
   const { online } = useBackend()
   const toast = useToast()
@@ -509,6 +590,7 @@ export function Team() {
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [lastInvite, setLastInvite] = useState<{ email: string; code: string } | null>(null)
+  const [workload, setWorkload] = useState<TeamWorkload | null>(null)
 
   async function load() {
     try {
@@ -518,7 +600,13 @@ export function Team() {
     }
   }
 
-  useEffect(() => { if (online) load(); else setMembers(null) }, [online])
+  useEffect(() => {
+    if (!online) { setMembers(null); setWorkload(null); return }
+    load()
+    api.teamWorkload().then(setWorkload).catch(() => setWorkload(null))
+    const t = setInterval(load, 60000) // presence refresh
+    return () => clearInterval(t)
+  }, [online])
 
   async function invite() {
     const v = email.trim()
@@ -594,8 +682,9 @@ export function Team() {
                 <div className="ic" style={{ fontSize: 11, fontWeight: 700 }}>{initialsOf(m.name, m.email)}</div>
                 <div className="body">
                   <div className="nm">{m.name || m.email} <span className="badge">{m.role}</span></div>
-                  <div className="meta">{m.email}</div>
+                  <div className="meta">{m.email}{!m.online && m.last_seen_at ? ` · last seen ${new Date(m.last_seen_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}</div>
                 </div>
+                <span className={`badge${m.online ? ' grn' : ''}`}>{m.online ? 'Online' : 'Away'}</span>
               </div>
             )))
           : TEAM.map(([ini, nm, role, meta, status, cls]) => (
@@ -611,11 +700,8 @@ export function Team() {
       </div>
       {usingLive ? (
         <>
-          <p className="subnote">
-            Per-member workload isn't wired here yet — Dexter has no task-assignment system of its
-            own. Once a project is connected via the Prometheus integration (Settings), workload can
-            read real committed/completed points from there instead.
-          </p>
+          <WorkloadCard workload={workload} />
+          <AgentsCard />
           <DependencyMapCard />
         </>
       ) : (

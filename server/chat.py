@@ -122,6 +122,23 @@ async def _recall_note(semantic: SemanticMemory, sid: str, query: str, business_
     }
 
 
+async def _standing(fact_store, business_id: str | None, text: str) -> tuple[dict | None, str | None]:
+    """Save or drop a standing preference the Commander just stated, then return the
+    preferences note for the prompt plus what changed (for the client to show)."""
+    import ops
+
+    changed = None
+    stmt = ops.extract_standing_fact(text)
+    if stmt and await ops.remember(fact_store, business_id, stmt):
+        changed = f"Remembered: {stmt}"
+    else:
+        phrase = ops.extract_forget(text)
+        if phrase:
+            n = await ops.forget(fact_store, business_id, phrase)
+            changed = f"Forgot {n} preference{'s' if n != 1 else ''} about \"{phrase}\"" if n else None
+    return ops.standing_note(await ops.standing_facts(fact_store, business_id)), changed
+
+
 def _build_messages(session_id: str, protocol: Protocol, notes: list[dict] = ()) -> list[dict]:
     history = sessions[session_id]
     messages = [{"role": "system", "content": SYSTEM_PROMPTS[protocol]}]
@@ -141,7 +158,9 @@ async def send_message(body: ChatRequest, request: Request, ctx: CurrentContext 
     sessions[sid].append(user_msg)
     await _persist(store, semantic, sid, user_msg)
 
+    standing, remembered = await _standing(request.app.state.fact_store, ctx.business_id, body.message)
     notes = [
+        standing,
         await _recall_note(semantic, sid, body.message, ctx.business_id),
         await _document_note(request.app.state.embed_fn, body.message, ctx.business_id),
     ]
@@ -156,6 +175,7 @@ async def send_message(body: ChatRequest, request: Request, ctx: CurrentContext 
     return {
         "session_id": sid,
         "message": assistant_msg.model_dump(mode="json"),
+        "remembered": remembered,
     }
 
 
@@ -198,7 +218,11 @@ async def websocket_chat(ws: WebSocket, app_state, token: str | None = None):
             sessions[session_id].append(user_msg)
             await _persist(store, semantic, session_id, user_msg)
 
+            standing, remembered = await _standing(app_state.fact_store, ctx.business_id, content)
+            if remembered:
+                await ws.send_json({"type": "remembered", "content": remembered})
             notes = [
+                standing,
                 await _recall_note(semantic, session_id, content, ctx.business_id),
                 await _document_note(app_state.embed_fn, content, ctx.business_id),
             ]

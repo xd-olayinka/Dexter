@@ -3,8 +3,9 @@ P5 already ingests: notebooks group documents; `ask` answers only from a noteboo
 cites them by number; `briefing` writes a two-voice Dexter/Anthony script over those sources and
 synthesizes it with the two Piper voices when voice is installed.
 
-Retrieval is lexical (BM25-style over ~900-char passages), so it works with no embedding model;
-passages are cut on the fly from the stored document text.
+Retrieval is BM25 over ~900-char passages cut on the fly from the stored document text, so it
+works with no embedding model; when one is available (`rank_hybrid`) the candidates are re-ranked
+by blending BM25 with embedding similarity, which finds passages that answer in other words.
 """
 from __future__ import annotations
 
@@ -84,6 +85,55 @@ def rank_passages(question: str, pool: list[dict], k: int = TOP_K) -> list[dict]
             scored.append((score, p))
     scored.sort(key=lambda x: -x[0])
     return [p for _, p in scored[:k]]
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def blend(bm25_ranked: list[dict], sims: dict[int, float], k: int = TOP_K, weight: float = 0.5) -> list[dict]:
+    """Blend BM25 rank (1 for the top hit, falling linearly) with cosine similarity (0..1).
+    Passages keyed by id(); ones with no lexical hit enter on similarity alone."""
+    n = len(bm25_ranked)
+    lex = {id(p): 1 - i / max(n, 1) for i, p in enumerate(bm25_ranked)}
+    by_id = {id(p): p for p in bm25_ranked}
+    scores = {}
+    for pid in set(lex) | set(sims):
+        scores[pid] = (1 - weight) * lex.get(pid, 0.0) + weight * max(0.0, sims.get(pid, 0.0))
+    return [by_id[pid] for pid, _ in sorted(scores.items(), key=lambda x: -x[1]) if pid in by_id][:k]
+
+
+async def rank_hybrid(question: str, pool: list[dict], embed_fn, k: int = TOP_K) -> list[dict]:
+    """BM25, re-ranked with embeddings when an embedding model answers. Small notebooks embed
+    every passage (so a zero-lexical-overlap passage can still surface); large ones re-rank only
+    the lexical top candidates to bound the cost."""
+    lexical = rank_passages(question, pool, k=max(k * 4, 24))
+    if embed_fn is None:
+        return lexical[:k]
+    try:
+        qv = await embed_fn(question)
+    except Exception:
+        qv = []
+    if not qv:
+        return lexical[:k]
+    candidates = pool if len(pool) <= 60 else lexical
+    ranked = list(lexical) + [p for p in candidates if all(p is not q for q in lexical)]
+    sims: dict[int, float] = {}
+    for p in candidates:
+        try:
+            v = await embed_fn(p["text"])
+        except Exception:
+            v = []
+        if v:
+            sims[id(p)] = _cosine(qv, v)
+    if not sims:
+        return lexical[:k]
+    return blend(ranked, sims, k)
 
 
 def build_ask_prompt(question: str, sources: list[dict]) -> str:
@@ -242,7 +292,7 @@ async def notebook_documents(notebook_id: str, ctx: CurrentContext = Depends(cur
 @router.post("/notebooks/{notebook_id}/ask")
 async def ask(notebook_id: str, body: AskIn, request: Request, ctx: CurrentContext = Depends(current_context)):
     pool = await _pool_or_503()
-    top = rank_passages(body.question, await _notebook_sources(pool, notebook_id, ctx.business_id))
+    top = await rank_hybrid(body.question, await _notebook_sources(pool, notebook_id, ctx.business_id), getattr(request.app.state, "embed_fn", None))
     if not top:
         return {"answer": "None of this notebook's sources mention that.", "citations": [], "model": None}
     brain = request.app.state.brain
@@ -264,7 +314,7 @@ async def ask(notebook_id: str, body: AskIn, request: Request, ctx: CurrentConte
 async def briefing(notebook_id: str, body: BriefingIn, request: Request, ctx: CurrentContext = Depends(current_context)):
     pool = await _pool_or_503()
     sources = await _notebook_sources(pool, notebook_id, ctx.business_id)
-    top = rank_passages(body.topic, sources) if body.topic.strip() else sources[:TOP_K]
+    top = await rank_hybrid(body.topic, sources, getattr(request.app.state, "embed_fn", None)) if body.topic.strip() else sources[:TOP_K]
     if not top:
         raise HTTPException(status_code=400, detail="Add documents to this notebook first")
     brain = request.app.state.brain

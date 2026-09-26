@@ -7,7 +7,12 @@ import { ChatWs, type ChatWsFrame } from '../lib/chatws'
 import { api, ApiError } from '../lib/api'
 import { MicButton } from '../components/MicButton'
 
-type Msg = { who: 'dexter' | 'me'; text: string; img?: string; warn?: boolean; streaming?: boolean }
+type Msg = { who: 'dexter' | 'me'; text: string; img?: string; warn?: boolean; streaming?: boolean; note?: boolean }
+
+const LIVE_INTRO: Record<Mode, string> = {
+  orch: "Live. Tell me what you need — or tell me how you like things done (\"remember…\", \"always…\", \"from now on…\") and I'll keep to it.",
+  shadow: 'Live. Executors, gates and spend are real from here. Give me a task to run, or use the actions below.',
+}
 
 const PENDING_KEY = 'dexter.pendingMessage'
 
@@ -18,6 +23,9 @@ export default function Chat({ mode }: { mode: Mode }) {
     { who: 'me', text: seed.me },
     { who: 'dexter', text: seed.m2 },
   ])
+  const [held, setHeld] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const touchedRef = useRef(false)
   const [draft, setDraft] = useState('')
   const [wsOpen, setWsOpen] = useState(false)
   const [streaming, setStreaming] = useState(false)
@@ -31,14 +39,26 @@ export default function Chat({ mode }: { mode: Mode }) {
   const mountedRef = useRef(true)
   useEffect(() => () => { mountedRef.current = false }, [])
 
-  // reseed when the protocol flips — each mask has its own thread voice
+  // reseed when the protocol flips — each mask has its own thread voice. Live: no scripted
+  // conversation, just an honest opener; the canned exchange is for demo mode only.
   useEffect(() => {
-    setMsgs([
-      { who: 'dexter', text: seed.m1 },
-      { who: 'me', text: seed.me },
-      { who: 'dexter', text: seed.m2 },
-    ])
-  }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
+    touchedRef.current = false
+  }, [mode])
+  useEffect(() => {
+    if (touchedRef.current) return
+    setMsgs(online
+      ? [{ who: 'dexter', text: LIVE_INTRO[mode] }]
+      : [
+          { who: 'dexter', text: seed.m1 },
+          { who: 'me', text: seed.me },
+          { who: 'dexter', text: seed.m2 },
+        ])
+  }, [mode, online]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!online) return
+    api.hold().then((h) => setHeld(h.on)).catch(() => {})
+  }, [online])
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
@@ -71,6 +91,14 @@ export default function Chat({ mode }: { mode: Mode }) {
           return [...m, finalMsg]
         })
         setStreaming(false)
+      } else if (frame.type === 'remembered') {
+        setMsgs((m) => {
+          const last = m[m.length - 1]
+          const note: Msg = { who: 'dexter', text: frame.content, note: true }
+          // keep the streaming reply last
+          if (last && last.who === 'dexter' && last.streaming) return [...m.slice(0, -1), note, last]
+          return [...m, note]
+        })
       } else if (frame.type === 'error') {
         setMsgs((m) => {
           const last = m[m.length - 1]
@@ -108,9 +136,78 @@ export default function Chat({ mode }: { mode: Mode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const say = (text: string, warn = false) => setMsgs((m) => [...m, { who: 'dexter', text, warn }])
+
+  /** Live quick actions — each does the real thing through the API, then reports back. */
+  async function act(label: string, fn: () => Promise<string>) {
+    if (busy) return
+    touchedRef.current = true
+    setBusy(true)
+    setMsgs((m) => [...m, { who: 'me', text: label }])
+    try {
+      say(await fn())
+    } catch (err) {
+      say(err instanceof ApiError ? err.message : 'That action failed — is the backend still up?', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const lastAsk = () => [...msgs].reverse().find((m) => m.who === 'me' && !m.img)?.text
+
+  const approveAll = () => act('✓ Approve all gates', async () => {
+    const pending = (await api.gates()).filter((g) => g.status === 'pending')
+    if (!pending.length) return 'Nothing is waiting on you.'
+    await Promise.all(pending.map((g) => api.approveGate(g.task_id)))
+    return `Approved ${pending.length} gate${pending.length === 1 ? '' : 's'}: ${pending.map((g) => g.task_title || g.task_id).join(', ')}.`
+  })
+  const approveOldest = () => act('✓ Approve gate', async () => {
+    const pending = (await api.gates()).filter((g) => g.status === 'pending').sort((a, b) => a.created_at.localeCompare(b.created_at))
+    if (!pending.length) return 'No gates pending.'
+    await api.approveGate(pending[0].task_id)
+    return `Approved "${pending[0].task_title || pending[0].task_id}" — ${pending[0].reason}. ${pending.length - 1} still waiting.`
+  })
+  const delegate = (label: string) => act(label, async () => {
+    const text = draft.trim() || lastAsk()
+    if (!text) return 'Type the task first, then tap this — I\'ll hand it to an executor.'
+    setDraft('')
+    const t = await api.delegate(text.slice(0, 120), text)
+    return `Delegated to Anthony: "${t.title}" on ${t.metadata?.model_route ?? 'the default brain'}, capped at $${(t.budget_cap ?? 0).toFixed(2)}.${t.metadata?.hold ? ' Hold is on, so it is waiting at a gate.' : ''}`
+  })
+  const latestResult = () => act('View latest result', async () => {
+    const done = (await api.tasks()).filter((t) => t.status === 'done' && t.result).sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''))
+    if (!done.length) return 'No finished work yet.'
+    const t = done[0]
+    return `"${t.title}" — finished, $${t.spend.toFixed(4)}:\n\n${t.result}`
+  })
+  const toggleHold = () => act(held ? 'Release hold' : 'Hold', async () => {
+    const r = await api.setHold(!held)
+    setHeld(r.on)
+    return r.on
+      ? 'Hold is on. Anything delegated from now waits at a gate until you approve it; running work continues.'
+      : 'Hold released. New work runs straight away again (tasks already parked still need your approval).'
+  })
+  const killNewest = () => act('Kill executor', async () => {
+    const running = (await api.tasks()).filter((t) => t.status === 'running' || t.status === 'queued').sort((a, b) => b.created_at.localeCompare(a.created_at))
+    if (!running.length) return 'No executor is running.'
+    await api.killTask(running[0].id)
+    return `Killed "${running[0].title}" at $${running[0].spend.toFixed(4)}.`
+  })
+  const raiseCap = () => act('Raise cap', async () => {
+    const cfg = await api.guardConfig()
+    const next = Math.round(cfg.daily_budget * 1.25 * 100) / 100
+    await api.patchGuardConfig({ daily_budget: next })
+    return `Daily cap raised from $${cfg.daily_budget.toFixed(2)} to $${next.toFixed(2)} (+25%).`
+  })
+
+  const livePills: Array<[string, () => void]> = mode === 'orch'
+    ? [['✓ Approve all', approveAll], ['Delegate to Anthony', () => delegate('Delegate to Anthony')], ['Latest result', latestResult], [held ? 'Release hold' : 'Hold', toggleHold]]
+    : [['✓ Approve gate', approveOldest], ['Kill executor', killNewest], ['Force spawn', () => delegate('Force spawn')], ['Raise cap', raiseCap], [held ? 'Release hold' : 'Hold', toggleHold]]
+
   function send(text?: string) {
     const v = (text ?? draft).trim()
     if (!v || streaming) return
+    touchedRef.current = true
     setDraft('')
     setMsgs((m) => [...m, { who: 'me', text: v }])
 
@@ -189,8 +286,8 @@ export default function Chat({ mode }: { mode: Mode }) {
           ) : (
             <div key={i} className="msg">
               <div className="av"><img src={avatar} alt="Dexter" /></div>
-              <div className="bub" style={m.warn ? { borderColor: 'var(--warn)', color: 'var(--warn)' } : undefined}>
-                <span className="tag">Dexter · {seed.voice}</span>
+              <div className="bub" style={m.warn ? { borderColor: 'var(--warn)', color: 'var(--warn)' } : m.note ? { opacity: 0.75, fontSize: '0.9em' } : undefined}>
+                <span className="tag">{m.note ? 'Standing preference' : `Dexter · ${seed.voice}`}</span>
                 {m.text}
                 {m.streaming && '▍'}
               </div>
@@ -199,7 +296,11 @@ export default function Chat({ mode }: { mode: Mode }) {
         )}
       </div>
       <div className="pillrow">
-        {seed.pills.map((p) => <button key={p} className="p" onClick={() => send(p)}>{p}</button>)}
+        {online
+          ? livePills.map(([label, fn]) => (
+              <button key={label} className={`p${label === 'Release hold' ? ' on' : ''}`} disabled={busy} onClick={fn}>{label}</button>
+            ))
+          : seed.pills.map((p) => <button key={p} className="p" onClick={() => send(p)}>{p}</button>)}
       </div>
       <div className="chatinput">
         <label className="attach">

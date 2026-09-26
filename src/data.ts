@@ -9,6 +9,7 @@ export const TABS: Record<Mode, [id: string, glyph: string, label: string][]> = 
     ['projects', '▦', 'Projects'],
     ['tasks', '☑', 'Tasks'],
     ['team', '◈', 'Team'],
+    ['archive', '▣', 'Archive'],
     ['chat', '✦', 'Chat'],
   ],
   shadow: [

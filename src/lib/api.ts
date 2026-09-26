@@ -127,7 +127,7 @@ export interface TaskInfo {
   title: string
   description: string
   status: 'draft' | 'queued' | 'running' | 'gated' | 'done' | 'killed'
-  metadata?: { model_route?: string | null; selection?: Selection; minutes_saved?: number | null; revenue_value?: number | null; resumed_from?: string }
+  metadata?: { model_route?: string | null; selection?: Selection; minutes_saved?: number | null; revenue_value?: number | null; resumed_from?: string; priority?: Priority; template_id?: string; hold?: boolean }
   protocol: string
   executor_id: string | null
   budget_cap: number | null
@@ -249,7 +249,15 @@ export interface MemberInfo {
   name: string
   role: string
   joined_at: string
+  last_seen_at?: string | null
+  online?: boolean
 }
+
+export type Priority = 'critical' | 'high' | 'normal' | 'low'
+export interface RunLogEvent { at: string; kind: string; task_id: string | null; title: string; detail: string }
+export interface SpawnTemplate { id: string; name: string; description: string; tier: number | null; budget_cap: number | null; minutes_saved: number | null; priority: Priority | null }
+export interface StandingFact { key: string; value: string; updated_at?: string }
+export interface TeamWorkload { connected: boolean; error?: string; teams: Array<{ team: string; members: unknown }> }
 
 export interface BusinessInfo {
   id: string
@@ -384,7 +392,7 @@ export const api = {
     }),
   testGate: () => request<Gate>('/api/shadow/gates/test', { method: 'POST' }),
 
-  delegate: (title: string, description = '', budgetCap?: number, extra: { tier?: number; minutes_saved?: number; revenue_value?: number } = {}) =>
+  delegate: (title: string, description = '', budgetCap?: number, extra: { tier?: number; minutes_saved?: number; revenue_value?: number; priority?: Priority } = {}) =>
     request<TaskInfo>('/api/shadow/delegate', {
       method: 'POST',
       body: JSON.stringify({ title, description, budget_cap: budgetCap ?? null, ...extra }),
@@ -483,6 +491,19 @@ export const api = {
 
   // ---------- Agents (Phase 4 §2) ----------
   agents: () => request<AgentRecord[]>('/api/shadow/agents'),
+
+  // ---------- Ops (server/ops.py) ----------
+  runLog: (limit = 40) => request<RunLogEvent[]>(`/api/ops/runlog?limit=${limit}`),
+  hold: () => request<{ on: boolean }>('/api/ops/hold'),
+  setHold: (on: boolean) => request<{ on: boolean }>('/api/ops/hold', { method: 'POST', body: JSON.stringify({ on }) }),
+  templates: () => request<SpawnTemplate[]>('/api/ops/templates'),
+  createTemplate: (t: Omit<SpawnTemplate, 'id'>) => request<SpawnTemplate>('/api/ops/templates', { method: 'POST', body: JSON.stringify(t) }),
+  deleteTemplate: (id: string) => request<void>(`/api/ops/templates/${id}`, { method: 'DELETE' }),
+  spawnTemplate: (id: string, title?: string) =>
+    request<TaskInfo>(`/api/ops/templates/${id}/spawn`, { method: 'POST', body: JSON.stringify({ title: title ?? null }) }, 15000),
+  standingFacts: () => request<StandingFact[]>('/api/ops/facts'),
+  deleteStandingFact: (key: string) => request<void>(`/api/ops/facts/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+  teamWorkload: () => request<TeamWorkload>('/api/ops/prometheus/workload', undefined, 15000),
 
   // ---------- Metrics (Phase 4 §3) ----------
   metrics: () => request<MetricsSummary>('/api/metrics/summary', undefined, 8000),

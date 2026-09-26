@@ -247,6 +247,38 @@ The audit of PRD vs. code found these gaps that need no third-party account. All
   `prometheus_read_resource` (MCP resources) and `prometheus_my_gate_checks` /
   `prometheus_report_gate_check`, so Anthony can vote on Prometheus `agent_check`/`consensus` gates.
 
+## 9 · Line-by-line pass — shipped 2026-09-26
+
+A second, line-by-line read of the PRD found surfaces that were still demo copy or had no backend.
+All closed (`server/ops.py` unless noted; tests in `server/tests/test_ops.py`):
+
+- **Run Log** (Shadow Ops) was the `RUN_LOG` mock. `GET /api/ops/runlog` merges `task_log` spawns and
+  completions (with reason and cost), `agent_tool_calls`, pending gates and ledger alerts, newest first.
+- **Chat quick actions** were canned strings sent as messages, and the live chat opened on a scripted
+  exchange. Live chat now opens with an honest line; the pills act: Approve all gates, Delegate to
+  Anthony (the draft or last ask), Latest result, Hold; on Anthony's side Approve gate, Kill executor,
+  Force spawn, Raise cap (+25% daily). Demo mode keeps the scripted thread.
+- **Hold** — `POST /api/ops/hold`: while on, every newly delegated task parks at a "Commander hold"
+  gate (`executor.py`) until approved. Per business, in-process (resets on restart — deliberate: a
+  hold should never silently outlive the session that set it).
+- **Spawn templates** — `spawn_templates` table, CRUD and one-click spawn (tier, budget, minutes
+  saved, priority). Shadow Ops: "Save template" and a pill per template.
+- **Mission priority** — `priority` on delegate (critical/high/normal/low), shown on tasks and used
+  to sort the task list.
+- **Standing preferences** — the FactStore had no writer. Chat now detects "remember…", "from now
+  on…", "always/never…", "I prefer…", "my X is…" (never questions), saves them per business
+  (`standing` facts, business-scoped keys), injects them into every chat's context, and "forget…"
+  drops them. Settings → Standing preferences lists and forgets them.
+- **Per-business budget** — `/api/shadow/budget` read a process-global tracker; it now reads today's
+  spend for the caller's business from the persistent ledger.
+- **Team** — presence (`sessions.last_seen_at`, Online/Away + last seen), team load from Prometheus
+  (`list_teams` + `get_workload`, which now returns member names), and an Agents card: throughput
+  (today / 7 days) and this month's routing split by model from the ledger.
+- **Archive** — its own tab. Retrieval blends BM25 with embedding similarity when an embedding model
+  answers (`archive.rank_hybrid`), so a passage that answers in other words can surface.
+- **URL ingest** falls back to a Playwright render for JS-heavy pages (< 400 chars of text from raw
+  HTML) when Playwright is installed.
+
 ## What's intentionally not done this pass
 
 - **Slack/Gmail/GitHub/Stripe integrations (Phase 3 proper).** Each needs an OAuth app registered
@@ -254,8 +286,8 @@ The audit of PRD vs. code found these gaps that need no third-party account. All
   Cloud OAuth client, a GitHub OAuth App, a Stripe Connect app). I can build the generic
   integration-hub scaffolding once real credentials for at least one exist; building it against
   nothing would be scaffolding for its own sake.
-- **The Archive vault** (Phase 6) — v1 shipped (§8). Not yet: a dedicated screen (it lives in
-  Settings), embedding-based retrieval, and per-notebook chat history.
+- **The Archive vault** (Phase 6) — v1 shipped (§8), own screen and hybrid retrieval (§9). Not
+  yet: per-notebook chat history.
 - **Deploying the Dexter backend anywhere but the Commander's own machine.** The frontend deploys
   to GitHub Pages; the backend is now containerized (`server/Dockerfile`, `docker-compose.yml`) but
   has not been deployed to a host. That needs a hosting decision and an account.

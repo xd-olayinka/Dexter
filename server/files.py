@@ -168,6 +168,29 @@ async def upload_file(request: Request, file: UploadFile, ctx: CurrentContext = 
     return doc
 
 
+THIN_PAGE_CHARS = 400  # less text than this from raw HTML usually means a JS-rendered page
+
+
+async def _render_with_browser(url: str) -> str | None:
+    """Render a JS-heavy page with Playwright when it's installed; None when it isn't or fails."""
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        return None
+    try:
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+                await page.goto(url, timeout=20000, wait_until="networkidle")
+                return (await page.locator("body").inner_text(timeout=5000)).strip()
+            finally:
+                await browser.close()
+    except Exception as e:
+        log.info("Browser render failed for %s: %s", url, e)
+        return None
+
+
 class UrlBody(BaseModel):
     url: str
 
@@ -183,11 +206,18 @@ async def ingest_url(request: Request, body: UrlBody, ctx: CurrentContext = Depe
 
     content_type = resp.headers.get("content-type", "")
     text = _strip_html(resp.text) if "html" in content_type else resp.text.strip()
-    if not text:
+    if not text and "html" not in content_type:
         raise HTTPException(status_code=422, detail=f"No extractable text at {body.url}")
 
     title_match = re.search(r"(?is)<title>(.*?)</title>", resp.text) if "html" in content_type else None
     title = title_match.group(1).strip() if title_match else body.url
+
+    if "html" in content_type and len(text) < THIN_PAGE_CHARS:
+        rendered = await _render_with_browser(body.url)
+        if rendered and len(rendered) > len(text):
+            text = rendered
+    if not text:
+        raise HTTPException(status_code=422, detail=f"No extractable text at {body.url}")
 
     try:
         doc = await document_store.save("url", title, body.url, text, request.app.state.embed_fn, ctx.business_id)

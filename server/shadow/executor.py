@@ -42,6 +42,10 @@ class ExecutorProcess:
         log.info("Executor started: %s", self.task.id)
 
         try:
+            if self.task.metadata.get("hold"):
+                # Commander hold (ops.py) — the task waits at a gate until someone lets it run.
+                await self._enter_gate("Commander hold — new work is paused until you release it")
+
             trip = self.guard_chain.check(self.task, self.budget)
             if trip:
                 await self._enter_gate(trip)

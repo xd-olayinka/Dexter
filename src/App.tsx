@@ -5,6 +5,7 @@ import { OrchHome, Projects, Tasks, Team } from './screens/Orch'
 import { ShadowOps, Swarm, Selector, Credits } from './screens/Shadow'
 import Chat from './screens/Chat'
 import Settings from './screens/Settings'
+import Archive from './screens/Archive'
 import NotificationBell from './components/NotificationBell'
 import GateWatcher from './components/GateWatcher'
 import { BackendProvider, useBackend } from './lib/backend'
@@ -75,6 +76,7 @@ function Shell() {
               {tab === 'projects' && <Projects />}
               {tab === 'tasks' && <Tasks />}
               {tab === 'team' && <Team />}
+              {tab === 'archive' && <Archive />}
               {tab === 'chat' && <Chat mode="orch" />}
             </>
           ) : (
