@@ -2,8 +2,10 @@
 // throws ApiOffline so the UI can fall back to demo mode — the static
 // GitHub Pages deploy has no backend and must keep working.
 
+// VITE_API_URL=same-origin: the app is served by the backend itself (the Railway image).
+const BUILD_API_URL = import.meta.env.VITE_API_URL as string | undefined
 export const API_URL: string =
-  (import.meta.env.VITE_API_URL as string | undefined) ??
+  (BUILD_API_URL === 'same-origin' ? window.location.origin : BUILD_API_URL) ??
   localStorage.getItem('dexter.apiUrl') ??
   'http://localhost:8000'
 

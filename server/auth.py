@@ -266,6 +266,10 @@ async def register(body: RegisterIn):
                 await conn.execute("INSERT INTO business_members (business_id, user_id, role) VALUES (%s, %s, 'owner')", (biz_id, user_id))
                 biz = (biz_id, body.business_name.strip() or "My Business", "owner")
         else:
+            if settings.signup_mode != "open":
+                cur = await conn.execute("SELECT 1 FROM users WHERE password_hash IS NOT NULL AND password_hash <> '' AND id <> 'user_default' LIMIT 1")
+                if settings.signup_mode == "invite" or await cur.fetchone():
+                    raise HTTPException(status_code=403, detail="Sign-up is invite-only — ask the owner for an invite code")
             user_id = f"user_{uuid.uuid4().hex[:8]}"
             business_id = f"biz_{uuid.uuid4().hex[:8]}"
             await conn.execute(

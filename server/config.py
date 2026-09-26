@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # user until then, same bootstrap-on-first-use pattern as Prometheus's workspace.
     require_auth: bool = False
     session_ttl_days: int = 30
+    # Who may create a NEW account (and business) at /api/auth/register. Claiming an invite
+    # always works. open = anyone · first = only while no account exists yet (the owner),
+    # then invite-only · invite = never. Hosted deploys should not be open: every business
+    # spends the same model keys.
+    signup_mode: str = "open"
+    # Directory holding the built frontend (the combined Railway image); empty = API only.
+    static_dir: str = ""
 
     # Phase 3 · Prometheus MCP bridge (docs/PROMETHEUS_MCP_SPEC.md)
     prometheus_mcp_token: str = ""

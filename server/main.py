@@ -136,11 +136,35 @@ app.include_router(archive_router)
 app.include_router(ops_router)
 
 
-@app.get("/")
-async def health():
+@app.get("/api/health")
+async def api_health():
     return {"status": "ok", "version": "0.1.0"}
+
+
+if not settings.static_dir:
+    @app.get("/")
+    async def health():
+        return {"status": "ok", "version": "0.1.0"}
 
 
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket, token: str | None = None):
     await websocket_chat(ws, app.state, token)
+
+
+if settings.static_dir:
+    # Combined image: serve the built app; unknown non-API paths fall back to index.html.
+    from pathlib import Path
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    _static = Path(settings.static_dir).resolve()
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str):
+        if path.startswith(("api/", "ws/")):
+            raise HTTPException(status_code=404)
+        target = (_static / path).resolve()
+        if path and target.is_file() and _static in target.parents:
+            return FileResponse(target)
+        return FileResponse(_static / "index.html")
