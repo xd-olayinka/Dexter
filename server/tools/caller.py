@@ -1,3 +1,5 @@
+from collections.abc import Awaitable, Callable
+
 from models import ToolCall
 from tools.registry import ToolRegistry
 
@@ -8,6 +10,7 @@ async def run_with_tools(
     tool_registry: ToolRegistry,
     max_rounds: int = 5,
     task_id: str | None = None,
+    on_step: Callable[[list[dict]], Awaitable[None]] | None = None,
 ) -> tuple[str, list[dict]]:
     tools = tool_registry.get_schema()
 
@@ -36,6 +39,8 @@ async def run_with_tools(
                 "tool_call_id": tc.get("id", ""),
                 "content": result.content,
             })
+        if on_step is not None:
+            await on_step(messages)  # checkpoint after each completed round (tool results in)
 
     final = messages[-1]
     if isinstance(final, dict) and final.get("role") == "assistant":

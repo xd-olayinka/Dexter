@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Voice
     whisper_model: str = "base"
     piper_voice_orch: str = "en_US-lessac-medium"
-    piper_voice_shadow: str = "en_US-alan-medium"
+    piper_voice_shadow: str = "en_GB-alan-medium"
 
     # Tools
     searxng_url: str = "http://localhost:8888"
@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     # then invite-only · invite = never. Hosted deploys should not be open: every business
     # spends the same model keys.
     signup_mode: str = "open"
+    # Seconds between Anthony's sweeps for Prometheus gate checks addressed to it (gate_voter.py); 0 = off.
+    gate_vote_interval: int = 120
     # Directory holding the built frontend (the combined Railway image); empty = API only.
     static_dir: str = ""
 

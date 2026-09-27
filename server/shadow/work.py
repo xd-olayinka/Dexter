@@ -43,13 +43,27 @@ class _TrackedBrain:
 def make_llm_work_fn(brain):
     async def work_fn(task: Task, budget: BudgetTracker) -> str:
         tracked = _TrackedBrain(brain, task, budget)
+        from shadow.agents_store import save_checkpoint
+
         objective = task.title if not task.description else f"{task.title}\n\n{task.description}"
-        messages = [
-            {"role": "system", "content": EXECUTOR_SYSTEM},
-            {"role": "user", "content": objective},
-        ]
+        checkpoint = task.metadata.pop("checkpoint", None)  # set when resuming after a restart
+        if checkpoint:
+            messages = list(checkpoint) + [{
+                "role": "user",
+                "content": "The server restarted mid-task. Your work so far is above — continue from where you "
+                           "stopped; don't repeat steps that already succeeded.",
+            }]
+        else:
+            messages = [
+                {"role": "system", "content": EXECUTOR_SYSTEM},
+                {"role": "user", "content": objective},
+            ]
+
+        async def checkpoint_step(msgs: list[dict]) -> None:
+            await save_checkpoint(task.id, msgs)
+
         log.info("Executor %s running via brain (tools: %s)", task.id, registry.list_tools())
-        result, _ = await run_with_tools(tracked, messages, registry, max_rounds=6, task_id=task.id)
+        result, _ = await run_with_tools(tracked, messages, registry, max_rounds=6, task_id=task.id, on_step=checkpoint_step)
         return result or "Executor finished without a final report."
 
     return work_fn

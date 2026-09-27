@@ -182,6 +182,10 @@ async def runlog(limit: int = 40, ctx: CurrentContext = Depends(current_context)
                                "detail": (t.error or "completed") + f" · ${t.spend:.4f}"})
     for g in get_manager().gate_manager.list_pending():
         events.append({"at": g.created_at.isoformat(), "kind": "gated", "task_id": g.task_id, "title": g.task_title, "detail": g.reason})
+    import gate_voter
+    for v in gate_voter.recent:
+        if v["business_id"] in (ctx.business_id, None):
+            events.append({"at": v["at"], "kind": "vote", "task_id": None, "title": v["title"], "detail": v["detail"]})
     for a in ledger.recent_alerts(ctx.business_id):
         events.append({"at": a["at"], "kind": "alert", "task_id": None, "title": a["title"], "detail": a["body"]})
     events.sort(key=lambda e: e["at"], reverse=True)

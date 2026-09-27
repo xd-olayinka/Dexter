@@ -1,0 +1,14 @@
+# Private SearXNG for Anthony's web_search tool (reached only over Railway's private network).
+use_default_settings: true
+general:
+  instance_name: dexter-search
+server:
+  # overridden at runtime by SEARXNG_SECRET
+  secret_key: "change-me"
+  limiter: false
+  image_proxy: false
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json

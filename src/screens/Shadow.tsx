@@ -17,7 +17,7 @@ function statusBadgeCls(status: TaskInfo['status']): string {
 }
 
 const RUN_ICON: Record<string, [string, string]> = {
-  spawn: ['⬢', ''], done: ['✓', 'grn'], killed: ['✕', 'red'], gated: ['⏸', 'ylw'], tool: ['⚙', ''], tool_error: ['⚠', 'red'], alert: ['⚠', 'red'],
+  spawn: ['⬢', ''], done: ['✓', 'grn'], killed: ['✕', 'red'], gated: ['⏸', 'ylw'], tool: ['⚙', ''], tool_error: ['⚠', 'red'], alert: ['⚠', 'red'], vote: ['⚖', 'grn'],
 }
 
 function hhmm(iso: string): string {

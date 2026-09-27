@@ -59,10 +59,25 @@ async def record_spawn(task: Task, owner_user_id: str | None, business_id: str |
                 (task.id, task.title, task.description, task.status.value, task.protocol.value,
                  task.executor_id, task.budget_cap, task.spend, task.created_at, business_id, model_route,
                  task.metadata.get("minutes_saved"), task.metadata.get("revenue_value"),
-                 json.dumps({k: v for k, v in task.metadata.items() if k in ("tier", "owner_user_id", "resumed_from")})),
+                 json.dumps({k: v for k, v in task.metadata.items() if k in ("tier", "owner_user_id", "resumed_from", "priority")})),
             )
     except Exception as e:
         log.warning("Could not persist agent spawn for task %s (continuing without it): %s", task.id, e)
+
+
+async def save_checkpoint(task_id: str, messages: list[dict]) -> None:
+    """The executor's conversation so far — what a resumed task continues from."""
+    pool = await get_pool()
+    if pool is None:
+        return
+    try:
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE task_log SET metadata = jsonb_set(metadata, '{checkpoint}', %s::jsonb) WHERE id = %s",
+                (json.dumps(messages, default=str), task_id),
+            )
+    except Exception as e:
+        log.info("Could not checkpoint %s: %s", task_id, e)
 
 
 async def record_completion(task: Task) -> None:
@@ -131,7 +146,7 @@ async def take_interrupted() -> list[dict]:
                 """UPDATE task_log SET status = 'interrupted', completed_at = now(),
                           error = COALESCE(error, 'Server restarted while this task was in flight')
                    WHERE status IN ('queued', 'running', 'gated')
-                   RETURNING id, title, description, budget_cap, business_id, minutes_saved, revenue_value, metadata"""
+                   RETURNING id, title, description, budget_cap, business_id, minutes_saved, revenue_value, metadata, spend"""
             )
             rows = await cur.fetchall()
             await conn.execute(
@@ -144,7 +159,7 @@ async def take_interrupted() -> list[dict]:
         {
             "id": r[0], "title": r[1], "description": r[2] or "", "budget_cap": float(r[3]) if r[3] is not None else None,
             "business_id": r[4], "minutes_saved": r[5], "revenue_value": float(r[6]) if r[6] is not None else None,
-            "metadata": r[7] or {},
+            "metadata": r[7] or {}, "spend": float(r[8] or 0),
         }
         for r in rows
     ]
@@ -160,11 +175,17 @@ async def resume_interrupted(app) -> int:
         return 0
     for r in rows:
         meta = r["metadata"]
+        # Continue, don't restart: carry the checkpointed conversation and only the budget that's left.
+        cap = r["budget_cap"]
+        if cap is not None:
+            cap = max(round(cap - r["spend"], 4), 0.01)
         task = Task(
-            title=r["title"], description=r["description"], budget_cap=r["budget_cap"],
+            title=r["title"], description=r["description"], budget_cap=cap,
             metadata={
                 "business_id": r["business_id"], "owner_user_id": meta.get("owner_user_id"), "tier": meta.get("tier"),
                 "minutes_saved": r["minutes_saved"], "revenue_value": r["revenue_value"], "resumed_from": r["id"],
+                "priority": meta.get("priority"),
+                **({"checkpoint": meta["checkpoint"]} if meta.get("checkpoint") else {}),
             },
         )
         await spawn_selected(app, task, r["business_id"], meta.get("owner_user_id"), meta.get("tier"))

@@ -104,8 +104,13 @@ async def lifespan(app: FastAPI):
     if resumed:
         log.info("Recovered %d interrupted task(s)", resumed)
 
+    import asyncio
+    import gate_voter
+    voter = asyncio.create_task(gate_voter.run_forever(app))
+
     yield
 
+    voter.cancel()
     log.info("Shutting down Dexter")
     await close_pool()
 
