@@ -2,7 +2,7 @@ import importlib.util
 import logging
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request
 
 from config import settings
 from tools.prometheus_tools import get_client as get_prometheus_client
@@ -42,7 +42,13 @@ async def _check_database() -> bool:
 
 
 @router.get("")
-async def system_status(request: Request):
+async def system_status(request: Request, authorization: str | None = Header(default=None)):
+    # The status page is public (the app polls it before sign-in), but the push topic is a
+    # secret: anyone who knows it can read gate alerts. Only a signed-in caller sees it.
+    signed_in = not settings.require_auth
+    if not signed_in and authorization and authorization.lower().startswith("bearer "):
+        from auth import _resolve_session
+        signed_in = await _resolve_session(authorization[7:].strip()) is not None
     ollama = request.app.state.ollama
     ollama_ok = await ollama.health()
     ollama_models = await ollama.list_models() if ollama_ok else []
@@ -77,7 +83,7 @@ async def system_status(request: Request):
         "browser": {"playwright": _lib_installed("playwright")},
         "notifications": {
             "configured": bool(settings.ntfy_topic),
-            "topic": settings.ntfy_topic,
+            "topic": settings.ntfy_topic if signed_in else None,
             "server": settings.ntfy_server,
         },
         "providers": provider_status,

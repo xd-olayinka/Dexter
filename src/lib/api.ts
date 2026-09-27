@@ -110,7 +110,7 @@ export interface SystemStatus {
   searxng: { ok: boolean; url: string }
   voice: { torch: boolean; stt: boolean; tts: boolean }
   browser: { playwright: boolean }
-  notifications: { configured: boolean; topic: string; server: string }
+  notifications: { configured: boolean; topic: string | null; server: string }
   providers: Record<string, boolean>
   prometheus: { configured: boolean; connected: boolean; url: string | null }
 }
