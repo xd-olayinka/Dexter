@@ -256,6 +256,7 @@ export interface MemberInfo {
 }
 
 export type Priority = 'critical' | 'high' | 'normal' | 'low'
+export type Role = 'owner' | 'admin' | 'member'
 export interface RunLogEvent { at: string; kind: string; task_id: string | null; title: string; detail: string }
 export interface SpawnTemplate { id: string; name: string; description: string; tier: number | null; budget_cap: number | null; minutes_saved: number | null; priority: Priority | null }
 export interface StandingFact { key: string; value: string; updated_at?: string }
@@ -480,10 +481,12 @@ export const api = {
     }),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   members: () => request<MemberInfo[]>('/api/auth/members'),
-  invite: (email: string, role: 'admin' | 'member', name = '') =>
+  invite: (email: string, role: Role, name = '') =>
     request<{ email: string; already_a_member: boolean; invite_code: string | null }>('/api/auth/invite', {
       method: 'POST', body: JSON.stringify({ email, role, name }),
     }),
+  setMemberRole: (userId: string, role: Role) =>
+    request<MemberInfo>(`/api/auth/members/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
   businesses: () => request<BusinessInfo[]>('/api/auth/businesses'),
   switchBusiness: (businessId: string) =>
     request<MeInfo>('/api/auth/switch-business', { method: 'POST', body: JSON.stringify({ business_id: businessId }) }),

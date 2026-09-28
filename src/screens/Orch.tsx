@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { PROJECTS, TASKS_TODAY, TASKS_UPCOMING, TEAM, LOAD } from '../data'
 import heroOrch from '../assets/img/hero-orch.jpg'
-import { api, ApiError, type BriefingToday, type DependencyMap, type MemberInfo, type MetricsSummary, type ProjectRecord, type TaskRecord, type TeamWorkload, type AgentRecord, type LedgerSummary } from '../lib/api'
+import { useAuth } from '../lib/auth'
+import { api, ApiError, type BriefingToday, type DependencyMap, type MemberInfo, type MetricsSummary, type ProjectRecord, type TaskRecord, type TeamWorkload, type AgentRecord, type LedgerSummary, type Role } from '../lib/api'
 import { useBackend } from '../lib/backend'
 import { useToast } from '../lib/toast'
 import { MicButton } from '../components/MicButton'
@@ -587,6 +588,10 @@ export function Team() {
   const toast = useToast()
   const [members, setMembers] = useState<MemberInfo[] | null>(null)
   const [inviting, setInviting] = useState(false)
+  const [inviteRole, setInviteRole] = useState<Role>('member')
+  const { me } = useAuth()
+  const myRole = me?.role ?? 'member'
+  const canManage = myRole === 'owner' || myRole === 'admin'
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [lastInvite, setLastInvite] = useState<{ email: string; code: string } | null>(null)
@@ -613,7 +618,7 @@ export function Team() {
     if (!v || busy) return
     setBusy(true)
     try {
-      const res = await api.invite(v, 'member')
+      const res = await api.invite(v, inviteRole)
       if (res.already_a_member && !res.invite_code) {
         toast.push({ title: `${v} is already on this team`, kind: 'info' })
       } else if (res.invite_code) {
@@ -630,6 +635,17 @@ export function Team() {
       toast.push({ title: 'Could not invite', body: errMsg(e), kind: 'warn' })
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function changeRole(m: MemberInfo, role: Role) {
+    if (role === m.role) return
+    try {
+      await api.setMemberRole(m.id, role)
+      toast.push({ title: `${m.name || m.email} is now ${role}`, kind: 'good' })
+      load()
+    } catch (e) {
+      toast.push({ title: 'Could not change role', body: errMsg(e), kind: 'warn' })
     }
   }
 
@@ -650,6 +666,11 @@ export function Team() {
               onKeyDown={(e) => { if (e.key === 'Enter') invite() }}
               autoFocus
             />
+            <select className="set-input" style={{ width: 'auto' }} value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)} aria-label="Role">
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+              {myRole === 'owner' && <option value="owner">Owner</option>}
+            </select>
             <button className="send" aria-label="Invite" onClick={invite} disabled={busy}>↑</button>
           </div>
           <p className="subnote" style={{ marginTop: 8 }}>
@@ -681,7 +702,19 @@ export function Team() {
               <div key={m.id} className="row">
                 <div className="ic" style={{ fontSize: 11, fontWeight: 700 }}>{initialsOf(m.name, m.email)}</div>
                 <div className="body">
-                  <div className="nm">{m.name || m.email} <span className="badge">{m.role}</span></div>
+                  <div className="nm">
+                    {m.name || m.email}{' '}
+                    {canManage && (myRole === 'owner' || m.role !== 'owner') ? (
+                      <select
+                        className="badge" style={{ border: 'none', cursor: 'pointer' }} value={m.role} aria-label={`Role for ${m.name || m.email}`}
+                        onChange={(e) => changeRole(m, e.target.value as Role)}
+                      >
+                        <option value="member">member</option>
+                        <option value="admin">admin</option>
+                        {myRole === 'owner' && <option value="owner">owner</option>}
+                      </select>
+                    ) : <span className="badge">{m.role}</span>}
+                  </div>
                   <div className="meta">{m.email}{!m.online && m.last_seen_at ? ` · last seen ${new Date(m.last_seen_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}</div>
                 </div>
                 <span className={`badge${m.online ? ' grn' : ''}`}>{m.online ? 'Online' : 'Away'}</span>

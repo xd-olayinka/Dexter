@@ -224,7 +224,7 @@ def test_invite_requires_a_database(client):
 
 def test_invite_rejects_a_bad_role(client):
     # role validation runs before the DB check, so this 400s even with no database
-    res = client.post("/api/auth/invite", json={"email": "new@b.com", "role": "owner"})
+    res = client.post("/api/auth/invite", json={"email": "new@b.com", "role": "superuser"})
     assert res.status_code == 400
 
 

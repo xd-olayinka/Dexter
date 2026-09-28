@@ -295,7 +295,7 @@ async def register(body: RegisterIn):
 
 class InviteIn(BaseModel):
     email: EmailStr
-    role: str = "member"  # 'admin' | 'member'
+    role: str = "member"  # 'owner' (owners only) | 'admin' | 'member'
     name: str = ""
 
 
@@ -305,6 +305,65 @@ class InviteOut(BaseModel):
     # One-time code the invitee enters at registration. Only set when the email has no
     # real account yet (an existing account just signs in). Returned once, stored hashed.
     invite_code: str | None = None
+
+
+class MemberOut(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: str
+    joined_at: str
+    last_seen_at: str | None = None
+    online: bool = False
+
+
+ROLES = ("owner", "admin", "member")
+
+
+def role_change_error(caller_role: str, target_role: str, new_role: str, owner_count: int) -> str | None:
+    """Why this role change isn't allowed, or None if it is. Owners manage everyone; admins
+    manage admins and members but never touch owners; the last owner can't be demoted."""
+    if new_role not in ROLES:
+        return 'role must be "owner", "admin" or "member"'
+    if caller_role not in ("owner", "admin"):
+        return "Only an owner or admin can change roles"
+    if caller_role != "owner" and "owner" in (target_role, new_role):
+        return "Only an owner can make or change an owner"
+    if target_role == "owner" and new_role != "owner" and owner_count <= 1:
+        return "A business needs at least one owner — make someone else an owner first"
+    return None
+
+
+class RoleIn(BaseModel):
+    role: str
+
+
+@router.patch("/members/{user_id}", response_model=MemberOut)
+async def change_role(user_id: str, body: RoleIn, ctx: CurrentContext = Depends(current_context)):
+    pool = await get_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """SELECT u.id, u.email, u.name, bm.role, bm.joined_at FROM business_members bm JOIN users u ON u.id = bm.user_id
+               WHERE bm.business_id = %s AND bm.user_id = %s""",
+            (ctx.business_id, user_id),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Not a member of this business")
+        cur = await conn.execute(
+            "SELECT count(*) FROM business_members WHERE business_id = %s AND role = 'owner'", (ctx.business_id,),
+        )
+        owners = (await cur.fetchone())[0]
+        err = role_change_error(ctx.role, row[3], body.role, owners)
+        if err:
+            raise HTTPException(status_code=403 if "Only" in err else 400, detail=err)
+        await conn.execute(
+            "UPDATE business_members SET role = %s WHERE business_id = %s AND user_id = %s",
+            (body.role, ctx.business_id, user_id),
+        )
+    return MemberOut(id=row[0], email=row[1], name=row[2] or "", role=body.role, joined_at=row[4].isoformat())
 
 
 @router.post("/invite", response_model=InviteOut, status_code=201)
@@ -317,8 +376,10 @@ async def invite_member(body: InviteIn, ctx: CurrentContext = Depends(current_co
     of THIS business too — `business_members` is many-to-many by design."""
     if ctx.role not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Only an owner or admin can invite members")
-    if body.role not in ("admin", "member"):
-        raise HTTPException(status_code=400, detail='role must be "admin" or "member"')
+    if body.role not in ROLES:
+        raise HTTPException(status_code=400, detail='role must be "owner", "admin" or "member"')
+    if body.role == "owner" and ctx.role != "owner":
+        raise HTTPException(status_code=403, detail="Only an owner can invite another owner")
     pool = await get_pool()
     if pool is None:
         raise HTTPException(status_code=503, detail="Database not configured — install PostgreSQL to use accounts")
@@ -408,14 +469,6 @@ async def me(ctx: CurrentContext = Depends(current_context)):
     )
 
 
-class MemberOut(BaseModel):
-    id: str
-    email: str
-    name: str
-    role: str
-    joined_at: str
-    last_seen_at: str | None = None
-    online: bool = False
 
 
 @router.get("/members", response_model=list[MemberOut])
