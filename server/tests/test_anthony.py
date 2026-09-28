@@ -168,3 +168,17 @@ async def test_resumed_work_fn_continues_from_the_checkpoint():
     assert out == "Finished the remaining step."
     assert seen["messages"][:3] == checkpoint and "restarted" in seen["messages"][3]["content"]
     assert "checkpoint" not in task.metadata
+
+
+# ---------------------------------------------------------------- streaming (live chat over WebSocket)
+
+@pytest.mark.asyncio
+async def test_provider_stream_is_an_async_iterator_not_a_coroutine():
+    """Brain awaits provider.chat(stream=True) and then `async for`s the result — a coroutine
+    there broke every live chat reply ("'async for' requires an object with __aiter__")."""
+    from escalation.providers import AnthropicProvider, DeepSeekProvider
+
+    for provider, model in ((DeepSeekProvider(), "deepseek-chat"), (AnthropicProvider(), "claude-haiku-4-5")):
+        stream = await provider.chat([{"role": "user", "content": "hi"}], model=model, stream=True)
+        assert hasattr(stream, "__aiter__"), type(provider).__name__
+        await stream.aclose()  # never started: no network call made

@@ -125,7 +125,7 @@ class OpenAICompatProvider(LLMProvider):
                 del result["message"]["tool_calls"]
             return result
 
-    async def _stream_chat(self, body: dict) -> AsyncIterator:
+    def _stream_chat(self, body: dict) -> AsyncIterator:
         headers = self._headers()
 
         async def _iter():
@@ -335,7 +335,7 @@ class AnthropicProvider(LLMProvider):
             message["_anthropic_content"] = [b.model_dump(exclude_none=True) for b in response.content]
         return {"message": message, "done": True, "usage": usage}
 
-    async def _stream_chat(self, req: dict) -> AsyncIterator:
+    def _stream_chat(self, req: dict) -> AsyncIterator:
         client = self._sdk()
         model = req["model"]
 
