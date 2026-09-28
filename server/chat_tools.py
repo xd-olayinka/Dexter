@@ -120,16 +120,66 @@ async def run_turn(brain, messages: list[dict], business_id: str | None,
         msgs[0] = {**msgs[0], "content": msgs[0]["content"] + TOOL_GUIDE}
 
     async def on_tool(name: str) -> None:
-        if on_status is None:
-            return
-        label = ("Checking Prometheus" if name.startswith("prometheus_") else
-                 "Searching the web" if name == "web_search" else
-                 "Reading a page" if name == "browse_url" else
-                 "Drafting a change for you to confirm" if name == "propose_action" else "Working")
-        await on_status(f"{label}…")
+        if on_status is not None:
+            await on_status(f"{status_label(name)}…")
 
     reply, _ = await run_with_tools(_ChatBrain(brain, business_id), msgs, reg, max_rounds=5, on_tool=on_tool)
     return reply or "I couldn't finish that — try asking again more specifically.", proposals
+
+
+_LABELS = {"web_search": "Searching the web", "browse_url": "Reading a page", "propose_action": "Drafting a change for you to confirm"}
+
+
+def status_label(name: str) -> str:
+    return "Checking Prometheus" if name.startswith("prometheus_") else _LABELS.get(name, "Working")
+
+
+async def run_turn_stream(brain, messages: list[dict], business_id: str | None,
+                          on_chunk: Callable[[str], Awaitable[None]],
+                          on_status: Callable[[str], Awaitable[None]] | None = None,
+                          max_rounds: int = 5) -> tuple[str, list[dict]]:
+    """Same as run_turn, but every round streams: text goes to `on_chunk` as it arrives, and a
+    round that ends in tool calls runs them and streams the next round. Returns (reply, proposals)."""
+    proposals: list[dict] = []
+    reg = make_registry(business_id, proposals)
+    schema = reg.get_schema()
+    msgs = list(messages)
+    if msgs and msgs[0].get("role") == "system":
+        msgs[0] = {**msgs[0], "content": msgs[0]["content"] + TOOL_GUIDE}
+    reply = ""
+    for _ in range(max_rounds):
+        stream = await brain.chat(msgs, tools=schema, stream=True, business_id=business_id, source="chat")
+        text, final = "", {}
+        async for frame in stream:
+            piece = (frame.get("message") or {}).get("content") or ""
+            if piece:
+                if not text and reply:
+                    await on_chunk("\n\n")
+                    reply += "\n\n"
+                text += piece
+                reply += piece
+                await on_chunk(piece)
+            if frame.get("done"):
+                final = frame.get("message") or {}
+        calls = final.get("tool_calls")
+        assistant = {"role": "assistant", "content": text}
+        if calls:
+            assistant["tool_calls"] = calls
+            if final.get("_anthropic_content"):
+                assistant["_anthropic_content"] = final["_anthropic_content"]
+        msgs.append(assistant)
+        if not calls:
+            break
+        for tc in calls:
+            fn = tc.get("function", {})
+            if on_status is not None:
+                await on_status(f"{status_label(fn.get('name', ''))}…")
+            result = await reg.execute(ToolCall(name=fn.get("name", ""), arguments=fn.get("arguments", {})))
+            msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": result.content})
+    if not reply:
+        reply = "I couldn't finish that — try asking again more specifically."
+        await on_chunk(reply)
+    return reply, proposals
 
 
 def take(action_id: str, business_id: str | None) -> dict | None:

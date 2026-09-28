@@ -17,6 +17,12 @@ const LIVE_INTRO: Record<Mode, string> = {
 
 const PENDING_KEY = 'dexter.pendingMessage'
 
+/** Replies are plain text, but models still write **bold** — render that, nothing else. */
+function Rich({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*\n]+\*\*)/g)
+  return <>{parts.map((p, i) => (p.startsWith('**') && p.endsWith('**') && p.length > 4 ? <b key={i}>{p.slice(2, -2)}</b> : p))}</>
+}
+
 export default function Chat({ mode }: { mode: Mode }) {
   const seed = CHAT_SEED[mode]
   const [msgs, setMsgs] = useState<Msg[]>([
@@ -322,7 +328,7 @@ export default function Chat({ mode }: { mode: Mode }) {
               <div className="av"><img src={avatar} alt="Dexter" /></div>
               <div className="bub" style={m.warn ? { borderColor: 'var(--warn)', color: 'var(--warn)' } : m.note ? { opacity: 0.75, fontSize: '0.9em' } : undefined}>
                 <span className="tag">{m.proposal ? 'Proposed change · needs your OK' : m.note ? (m.streaming ? 'Working' : 'Standing preference') : `Dexter · ${seed.voice}`}</span>
-                {m.text}
+                <Rich text={m.text} />
                 {m.proposal && (
                   <span style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
                     {m.proposal.state === 'open' ? (

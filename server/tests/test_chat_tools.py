@@ -4,6 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -87,3 +89,81 @@ async def test_perform_calls_prometheus(monkeypatch):
 def test_confirming_an_unknown_action_is_a_404():
     with TestClient(app) as c:
         assert c.post("/api/ops/actions/act_nope/confirm").status_code == 404
+
+
+# ---------------------------------------------------------------- streaming with tools
+
+@pytest.mark.asyncio
+async def test_openai_compat_stream_collects_tool_calls_and_usage(monkeypatch):
+    import httpx
+    import escalation.providers as prov
+
+    sse = "\n".join("data: " + x for x in [
+        '{"choices":[{"delta":{"content":"Let me "}}]}',
+        '{"choices":[{"delta":{"content":"check."}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"prometheus_list_teams","arguments":"{\\"a"}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\":1}"}}]},"finish_reason":"tool_calls"}]}',
+        '{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}',
+        "[DONE]",
+    ]) + "\n"
+    seen = {}
+
+    def handler(request):
+        seen["body"] = request.read()
+        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(prov.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    stream = await prov.DeepSeekProvider().chat([{"role": "user", "content": "hi"}], model="deepseek-chat", stream=True, tools=[])
+    frames = [f async for f in stream]
+    assert "".join(f["message"]["content"] for f in frames) == "Let me check."
+    final = frames[-1]
+    assert final["done"] and final["usage"] == {"prompt_tokens": 10, "completion_tokens": 5}
+    assert final["message"]["tool_calls"] == [{"id": "c1", "function": {"name": "prometheus_list_teams", "arguments": {"a": 1}}}]
+    assert json.loads(seen["body"])["stream_options"] == {"include_usage": True}
+
+
+class StreamBrain:
+    def __init__(self, *rounds):
+        self.rounds = list(rounds)
+
+    async def chat(self, messages, tools=None, stream=False, **kw):
+        pieces, calls = self.rounds.pop(0)
+
+        async def gen():
+            for p in pieces:
+                yield {"message": {"content": p}, "done": False}
+            msg = {"content": ""}
+            if calls:
+                msg["tool_calls"] = calls
+            yield {"message": msg, "done": True, "usage": {}}
+        return gen()
+
+
+@pytest.mark.asyncio
+async def test_streamed_turn_streams_text_runs_tools_then_streams_answer(monkeypatch):
+    chunks, statuses = [], []
+
+    async def on_chunk(c):
+        chunks.append(c)
+
+    async def on_status(s):
+        statuses.append(s)
+
+    brain = StreamBrain(
+        ([], [{"id": "c1", "function": {"name": "current_datetime", "arguments": {}}}]),
+        (["It is ", "noon."], None),
+    )
+    reply, proposals = await chat_tools.run_turn_stream(brain, [{"role": "system", "content": "s"}, {"role": "user", "content": "time?"}], "biz", on_chunk, on_status)
+    assert reply == "It is noon." and chunks == ["It is ", "noon."] and statuses == ["Working…"] and proposals == []
+
+
+@pytest.mark.asyncio
+async def test_streamed_turn_without_tools_is_one_round():
+    chunks = []
+
+    async def on_chunk(c):
+        chunks.append(c)
+
+    reply, _ = await chat_tools.run_turn_stream(StreamBrain((["Hel", "lo"], None)), [{"role": "user", "content": "hi"}], None, on_chunk)
+    assert reply == "Hello" and chunks == ["Hel", "lo"]

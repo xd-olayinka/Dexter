@@ -233,10 +233,11 @@ async def websocket_chat(ws: WebSocket, app_state, token: str | None = None):
             async def status(text: str) -> None:
                 await ws.send_json({"type": "status", "content": text})
 
-            # Tool rounds aren't streamed (the model decides mid-reply whether to look something
-            # up); the finished reply goes out as one chunk, then any proposed changes.
-            full_content, proposals = await chat_tools.run_turn(brain, llm_messages, ctx.business_id, on_status=status)
-            await ws.send_json({"type": "chunk", "content": full_content})
+            async def chunk(text: str) -> None:
+                await ws.send_json({"type": "chunk", "content": text})
+
+            # Streams word by word; a lookup shows a status line, then the answer streams in.
+            full_content, proposals = await chat_tools.run_turn_stream(brain, llm_messages, ctx.business_id, chunk, status)
             for p in proposals:
                 await ws.send_json({"type": "proposal", "proposal": p})
 

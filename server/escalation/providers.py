@@ -43,6 +43,7 @@ class LLMProvider(ABC):
 # ---------------------------------------------------------------- OpenAI-compatible (DeepSeek, OpenAI, Groq)
 
 class OpenAICompatProvider(LLMProvider):
+    STREAM_USAGE = True
     """Chat Completions with tool calling, normalized to Ollama's tool_call shape."""
 
     BASE_URL: str
@@ -105,6 +106,8 @@ class OpenAICompatProvider(LLMProvider):
             body["tools"] = tools
         if stream:
             body["stream"] = True
+            if self.STREAM_USAGE:
+                body["stream_options"] = {"include_usage": True}  # else streamed spend never reaches the ledger
             return self._stream_chat(body)
 
         async with httpx.AsyncClient(timeout=self.TIMEOUT_S) as client:
@@ -132,6 +135,8 @@ class OpenAICompatProvider(LLMProvider):
             async with httpx.AsyncClient(timeout=self.TIMEOUT_S) as client:
                 async with client.stream("POST", self.BASE_URL, headers=headers, json=body) as resp:
                     resp.raise_for_status()
+                    usage: dict = {}
+                    calls: dict[int, dict] = {}  # tool-call deltas arrive in fragments, keyed by index
                     async for line in resp.aiter_lines():
                         if not line.startswith("data: "):
                             continue
@@ -142,13 +147,27 @@ class OpenAICompatProvider(LLMProvider):
                             event = json.loads(payload)
                         except json.JSONDecodeError:
                             continue
-                        choice = event.get("choices", [{}])[0]
-                        content = choice.get("delta", {}).get("content") or ""
-                        done = choice.get("finish_reason") is not None
-                        frame = {"message": {"content": content}, "done": done}
-                        if done and event.get("usage"):
-                            frame["usage"] = event["usage"]
-                        yield frame
+                        if event.get("usage"):
+                            usage = event["usage"]
+                        choices = event.get("choices") or []
+                        if not choices:  # the usage-only chunk at the end
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        for tc in delta.get("tool_calls") or []:
+                            slot = calls.setdefault(tc.get("index", 0), {"id": "", "name": "", "arguments": ""})
+                            slot["id"] = tc.get("id") or slot["id"]
+                            fn = tc.get("function") or {}
+                            slot["name"] += fn.get("name") or ""
+                            slot["arguments"] += fn.get("arguments") or ""
+                        if delta.get("content"):
+                            yield {"message": {"content": delta["content"]}, "done": False}
+                    final: dict = {"message": {"content": ""}, "done": True, "usage": usage}
+                    if calls:
+                        final["message"]["tool_calls"] = self._normalize_tool_calls([
+                            {"id": c["id"], "function": {"name": c["name"], "arguments": c["arguments"] or "{}"}}
+                            for _, c in sorted(calls.items())
+                        ])
+                    yield final
         return _iter()
 
 
@@ -189,6 +208,7 @@ class OpenAIProvider(OpenAICompatProvider):
 
 
 class GroqProvider(OpenAICompatProvider):
+    STREAM_USAGE = False
     name = "groq"
     BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
     TIMEOUT_S = 60
@@ -348,8 +368,10 @@ class AnthropicProvider(LLMProvider):
                 async for text in s.text_stream:
                     yield {"message": {"content": text}, "done": False}
                 final = await s.get_final_message()
-            yield {
-                "message": {"content": ""}, "done": True,
-                "usage": {"input_tokens": final.usage.input_tokens, "output_tokens": final.usage.output_tokens},
-            }
+            normalized = self.normalize_response(final)
+            frame = {"message": {"content": ""}, "done": True, "usage": normalized["usage"]}
+            if normalized["message"].get("tool_calls"):
+                frame["message"]["tool_calls"] = normalized["message"]["tool_calls"]
+                frame["message"]["_anthropic_content"] = normalized["message"]["_anthropic_content"]
+            yield frame
         return _iter()
