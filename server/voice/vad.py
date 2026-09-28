@@ -83,8 +83,10 @@ class DummyVAD:
         self._received = False
 
     def process_chunk(self, audio_chunk: bytes, sample_rate: int = 16000) -> dict:
+        # No real VAD: never end the turn on a chunk (that transcribed every fragment on its own);
+        # push-to-talk release sends "commit", which finalizes the whole recording.
         self._received = True
-        return {"speech_detected": False, "speech_ended": True, "confidence": 0.0}
+        return {"speech_detected": False, "speech_ended": False, "confidence": 0.0}
 
     def reset(self):
         self._received = False

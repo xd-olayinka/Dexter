@@ -11,7 +11,9 @@ EXECUTOR_SYSTEM = (
     "the Dexter system. Complete the assigned task using the available tools when "
     "they help. Be efficient — minimal rounds, no filler. When done, reply with a "
     "concise report of what you did and the outcome. If the task cannot be completed "
-    "with your tools, say exactly what is missing instead of inventing a result."
+    "with your tools, say exactly what is missing instead of inventing a result. If a Prometheus "
+    "change comes back with \"proposed\": true, it is held for the Commander's approval in "
+    "Prometheus — report it as held for approval, never as done."
 )
 
 

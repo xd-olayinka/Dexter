@@ -182,3 +182,12 @@ async def test_provider_stream_is_an_async_iterator_not_a_coroutine():
         stream = await provider.chat([{"role": "user", "content": "hi"}], model=model, stream=True)
         assert hasattr(stream, "__aiter__"), type(provider).__name__
         await stream.aclose()  # never started: no network call made
+
+
+def test_placeholder_vad_never_ends_a_push_to_talk_turn():
+    """Without a real VAD every chunk used to 'end speech', so each fragment was transcribed
+    alone (a stream of repeated errors in chat). Push-to-talk's commit ends the turn instead."""
+    from voice.vad import DummyVAD
+
+    vad = DummyVAD()
+    assert all(not vad.process_chunk(b"\x00\x00" * 1600)["speech_ended"] for _ in range(5))

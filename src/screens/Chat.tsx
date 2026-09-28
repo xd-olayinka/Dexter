@@ -166,8 +166,10 @@ export default function Chat({ mode }: { mode: Mode }) {
   async function confirmProposal(p: Proposal) {
     setProposal(p.id, { state: 'done', detail: 'Working…' })
     try {
-      await api.confirmAction(p.id)
-      setProposal(p.id, { state: 'done', detail: 'Done in Prometheus' })
+      const r = await api.confirmAction(p.id)
+      // an approval-required Prometheus connection holds the change in its Approvals queue
+      const held = /"proposed":\s*true/.test(r.result)
+      setProposal(p.id, { state: 'done', detail: held ? 'Sent to Prometheus Approvals — it applies once approved there' : 'Done in Prometheus' })
     } catch (err) {
       setProposal(p.id, { state: 'failed', detail: err instanceof ApiError ? err.message : 'Failed' })
     }

@@ -284,6 +284,13 @@ All closed (`server/ops.py` unless noted; tests in `server/tests/test_ops.py`):
   its own and shows "Checking Prometheus…" while it does; any Prometheus change is a `propose_action`
   card the Commander confirms (`POST /api/ops/actions/{id}/confirm`). File tools never reach chat.
 
+- **Anthony asks per the docs** (2026-09-28) — NFR-3 ("irreversible or spend-heavy actions stop and
+  ping the Commander") is implemented where Prometheus's PRD puts it: the per-agent policy. A
+  Prometheus connection set to *Needs approval* (Settings → Connections) turns every write into an
+  Approvals proposal that replays on accept; Dexter reports those as "held for approval".
+- **Voice on Railway** — faster-whisper (no torch) is in the image; push-to-talk ends the turn on
+  release, and without a VAD a chunk no longer ends it (that transcribed every fragment separately).
+
 ## What's intentionally not done this pass
 
 - **Slack/Gmail/GitHub/Stripe integrations (Phase 3 proper).** Each needs an OAuth app registered
