@@ -284,6 +284,29 @@ async def spawn_template(template_id: str, body: SpawnFromTemplate, request: Req
     return task.model_dump(mode="json")
 
 
+# ---------------------------------------------------------------- chat-proposed changes (chat_tools.py)
+
+@router.post("/actions/{action_id}/confirm")
+async def confirm_action(action_id: str, ctx: CurrentContext = Depends(current_context)):
+    import chat_tools
+
+    p = chat_tools.take(action_id, ctx.business_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="That proposal expired or was already handled — ask Dexter again")
+    try:
+        result = await chat_tools.perform(p)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Prometheus refused it: {e}")
+    return {"ok": True, "summary": p["summary"], "result": result}
+
+
+@router.delete("/actions/{action_id}", status_code=204)
+async def dismiss_action(action_id: str, ctx: CurrentContext = Depends(current_context)):
+    import chat_tools
+
+    chat_tools.take(action_id, ctx.business_id)
+
+
 # ---------------------------------------------------------------- Prometheus workload (team load)
 
 @router.get("/prometheus/workload")

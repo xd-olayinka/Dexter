@@ -165,9 +165,9 @@ async def send_message(body: ChatRequest, request: Request, ctx: CurrentContext 
         await _document_note(request.app.state.embed_fn, body.message, ctx.business_id),
     ]
     llm_messages = _build_messages(sid, body.protocol, notes)
-    response = await brain.chat(llm_messages, business_id=ctx.business_id)
+    import chat_tools
+    content, proposals = await chat_tools.run_turn(brain, llm_messages, ctx.business_id)
 
-    content = response["message"]["content"]
     assistant_msg = Message(role=Role.ASSISTANT, content=content, protocol=body.protocol)
     sessions[sid].append(assistant_msg)
     await _persist(store, semantic, sid, assistant_msg)
@@ -176,6 +176,7 @@ async def send_message(body: ChatRequest, request: Request, ctx: CurrentContext 
         "session_id": sid,
         "message": assistant_msg.model_dump(mode="json"),
         "remembered": remembered,
+        "proposals": proposals,
     }
 
 
@@ -227,13 +228,17 @@ async def websocket_chat(ws: WebSocket, app_state, token: str | None = None):
                 await _document_note(app_state.embed_fn, content, ctx.business_id),
             ]
             llm_messages = _build_messages(session_id, protocol, notes)
-            stream = await brain.chat(llm_messages, stream=True, business_id=ctx.business_id)
+            import chat_tools
 
-            full_content = ""
-            async for chunk in stream:
-                token = chunk["message"]["content"]
-                full_content += token
-                await ws.send_json({"type": "chunk", "content": token})
+            async def status(text: str) -> None:
+                await ws.send_json({"type": "status", "content": text})
+
+            # Tool rounds aren't streamed (the model decides mid-reply whether to look something
+            # up); the finished reply goes out as one chunk, then any proposed changes.
+            full_content, proposals = await chat_tools.run_turn(brain, llm_messages, ctx.business_id, on_status=status)
+            await ws.send_json({"type": "chunk", "content": full_content})
+            for p in proposals:
+                await ws.send_json({"type": "proposal", "proposal": p})
 
             assistant_msg = Message(
                 role=Role.ASSISTANT, content=full_content, protocol=protocol

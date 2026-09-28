@@ -506,6 +506,9 @@ export const api = {
   deleteTemplate: (id: string) => request<void>(`/api/ops/templates/${id}`, { method: 'DELETE' }),
   spawnTemplate: (id: string, title?: string) =>
     request<TaskInfo>(`/api/ops/templates/${id}/spawn`, { method: 'POST', body: JSON.stringify({ title: title ?? null }) }, 15000),
+  confirmAction: (id: string) =>
+    request<{ ok: boolean; summary: string; result: string }>(`/api/ops/actions/${id}/confirm`, { method: 'POST' }, 30000),
+  dismissAction: (id: string) => request<void>(`/api/ops/actions/${id}`, { method: 'DELETE' }),
   standingFacts: () => request<StandingFact[]>('/api/ops/facts'),
   deleteStandingFact: (key: string) => request<void>(`/api/ops/facts/${encodeURIComponent(key)}`, { method: 'DELETE' }),
   teamWorkload: () => request<TeamWorkload>('/api/ops/prometheus/workload', undefined, 15000),

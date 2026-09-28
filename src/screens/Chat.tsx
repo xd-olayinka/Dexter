@@ -7,7 +7,8 @@ import { ChatWs, type ChatWsFrame } from '../lib/chatws'
 import { api, ApiError } from '../lib/api'
 import { MicButton } from '../components/MicButton'
 
-type Msg = { who: 'dexter' | 'me'; text: string; img?: string; warn?: boolean; streaming?: boolean; note?: boolean }
+type Proposal = { id: string; summary: string; state: 'open' | 'done' | 'dismissed' | 'failed'; detail?: string }
+type Msg = { who: 'dexter' | 'me'; text: string; img?: string; warn?: boolean; streaming?: boolean; note?: boolean; proposal?: Proposal }
 
 const LIVE_INTRO: Record<Mode, string> = {
   orch: "Live. Tell me what you need — or tell me how you like things done (\"remember…\", \"always…\", \"from now on…\") and I'll keep to it.",
@@ -79,7 +80,8 @@ export default function Chat({ mode }: { mode: Mode }) {
         setMsgs((m) => {
           const last = m[m.length - 1]
           if (last && last.who === 'dexter' && last.streaming) {
-            return [...m.slice(0, -1), { ...last, text: last.text + frame.content }]
+            // a status line ("Checking Prometheus…") is replaced by the reply, not appended to
+            return [...m.slice(0, -1), last.note ? { who: 'dexter', text: frame.content, streaming: true } : { ...last, text: last.text + frame.content }]
           }
           return [...m, { who: 'dexter', text: frame.content, streaming: true }]
         })
@@ -87,10 +89,24 @@ export default function Chat({ mode }: { mode: Mode }) {
         setMsgs((m) => {
           const last = m[m.length - 1]
           const finalMsg: Msg = { who: 'dexter', text: frame.message.content }
+          // the reply may be followed by proposal cards; replace the streaming bubble wherever it is
+          const i = m.findIndex((x) => x.who === 'dexter' && x.streaming)
+          if (i >= 0) return [...m.slice(0, i), finalMsg, ...m.slice(i + 1)]
           if (last && last.who === 'dexter' && last.streaming) return [...m.slice(0, -1), finalMsg]
           return [...m, finalMsg]
         })
         setStreaming(false)
+      } else if (frame.type === 'status') {
+        // "Checking Prometheus…" while tools run — shown in the pending reply bubble
+        setMsgs((m) => {
+          const last = m[m.length - 1]
+          if (last && last.who === 'dexter' && last.streaming && !last.text) return [...m.slice(0, -1), { ...last, note: true, text: frame.content }]
+          if (last && last.who === 'dexter' && last.streaming && last.note) return [...m.slice(0, -1), { ...last, text: frame.content }]
+          return m
+        })
+      } else if (frame.type === 'proposal') {
+        const p = frame.proposal
+        setMsgs((m) => [...m, { who: 'dexter', text: p.summary, proposal: { id: p.id, summary: p.summary, state: 'open' } }])
       } else if (frame.type === 'remembered') {
         setMsgs((m) => {
           const last = m[m.length - 1]
@@ -137,6 +153,24 @@ export default function Chat({ mode }: { mode: Mode }) {
   }, [])
 
   const say = (text: string, warn = false) => setMsgs((m) => [...m, { who: 'dexter', text, warn }])
+
+  const setProposal = (id: string, patch: Partial<Proposal>) =>
+    setMsgs((m) => m.map((x) => (x.proposal?.id === id ? { ...x, proposal: { ...x.proposal, ...patch } } : x)))
+
+  async function confirmProposal(p: Proposal) {
+    setProposal(p.id, { state: 'done', detail: 'Working…' })
+    try {
+      await api.confirmAction(p.id)
+      setProposal(p.id, { state: 'done', detail: 'Done in Prometheus' })
+    } catch (err) {
+      setProposal(p.id, { state: 'failed', detail: err instanceof ApiError ? err.message : 'Failed' })
+    }
+  }
+
+  async function dismissProposal(p: Proposal) {
+    setProposal(p.id, { state: 'dismissed', detail: 'Dismissed' })
+    api.dismissAction(p.id).catch(() => {})
+  }
 
   /** Live quick actions — each does the real thing through the API, then reports back. */
   async function act(label: string, fn: () => Promise<string>) {
@@ -287,8 +321,20 @@ export default function Chat({ mode }: { mode: Mode }) {
             <div key={i} className="msg">
               <div className="av"><img src={avatar} alt="Dexter" /></div>
               <div className="bub" style={m.warn ? { borderColor: 'var(--warn)', color: 'var(--warn)' } : m.note ? { opacity: 0.75, fontSize: '0.9em' } : undefined}>
-                <span className="tag">{m.note ? 'Standing preference' : `Dexter · ${seed.voice}`}</span>
+                <span className="tag">{m.proposal ? 'Proposed change · needs your OK' : m.note ? (m.streaming ? 'Working' : 'Standing preference') : `Dexter · ${seed.voice}`}</span>
                 {m.text}
+                {m.proposal && (
+                  <span style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+                    {m.proposal.state === 'open' ? (
+                      <>
+                        <button className="p" onClick={() => confirmProposal(m.proposal!)}>✓ Confirm</button>
+                        <button className="p" onClick={() => dismissProposal(m.proposal!)}>Dismiss</button>
+                      </>
+                    ) : (
+                      <span style={{ opacity: 0.75, color: m.proposal.state === 'failed' ? 'var(--warn)' : undefined }}>{m.proposal.detail}</span>
+                    )}
+                  </span>
+                )}
                 {m.streaming && '▍'}
               </div>
             </div>

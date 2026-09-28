@@ -11,6 +11,7 @@ async def run_with_tools(
     max_rounds: int = 5,
     task_id: str | None = None,
     on_step: Callable[[list[dict]], Awaitable[None]] | None = None,
+    on_tool: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[str, list[dict]]:
     tools = tool_registry.get_schema()
 
@@ -33,6 +34,8 @@ async def run_with_tools(
                 name=fn.get("name", ""),
                 arguments=fn.get("arguments", {}),
             )
+            if on_tool is not None:
+                await on_tool(tool_call.name)
             result = await tool_registry.execute(tool_call, task_id=task_id)
             messages.append({
                 "role": "tool",

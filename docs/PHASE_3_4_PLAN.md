@@ -279,6 +279,11 @@ All closed (`server/ops.py` unless noted; tests in `server/tests/test_ops.py`):
 - **URL ingest** falls back to a Playwright render for JS-heavy pages (< 400 chars of text from raw
   HTML) when Playwright is installed.
 
+- **Chat uses tools** (`server/chat_tools.py`, 2026-09-28) — per PROMETHEUS_MCP_SPEC §2, Dexter reads
+  and Anthony writes: chat runs the read-only tools (Prometheus reads, web search, browser, clock) on
+  its own and shows "Checking Prometheus…" while it does; any Prometheus change is a `propose_action`
+  card the Commander confirms (`POST /api/ops/actions/{id}/confirm`). File tools never reach chat.
+
 ## What's intentionally not done this pass
 
 - **Slack/Gmail/GitHub/Stripe integrations (Phase 3 proper).** Each needs an OAuth app registered
