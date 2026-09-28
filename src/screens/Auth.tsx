@@ -69,7 +69,7 @@ export default function Auth() {
           {busy ? 'Working…' : mode === 'login' ? 'Sign in' : 'Create account'}
         </button>
         <button
-          className="set-btn wide" style={{ marginTop: 8, background: 'transparent' }}
+          className="set-btn wide" style={{ marginTop: 8, background: 'transparent', color: 'var(--jet)', border: '1px solid var(--line)' }}
           onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}
         >
           {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign in'}
