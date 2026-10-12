@@ -158,3 +158,15 @@ class PrometheusMCP:
 
     async def attach_artifact(self, issue_id: str, kind: str, ref: str, **kwargs) -> dict:
         return await self._call("attach_artifact", {"issueId": issue_id, "artifact": {"kind": kind, "ref": ref, **kwargs}})
+
+    async def close_issue(self, issue_id: str, resolution: str | None = None, comment: str | None = None) -> dict:
+        return await self._call("close_issue", {"issueId": issue_id, "resolution": resolution, "comment": comment})
+
+    async def get_context_block(self, issue_id: str) -> dict:
+        return await self._call("get_context_block", {"issueId": issue_id})
+
+    async def query_graph(self, root_id: str, depth: int | None = None, direction: str | None = None) -> dict:
+        return await self._call("query_graph", {"rootId": root_id, "depth": depth, "direction": direction})
+
+    async def my_proposals(self, status: str | None = None) -> dict:
+        return await self._call("my_proposals", {"status": status})

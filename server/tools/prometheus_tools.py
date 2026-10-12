@@ -128,6 +128,24 @@ async def prometheus_attach_artifact(issue_id: str, kind: str, ref: str, url: st
     return await _wrap(_client_or_raise().attach_artifact(issue_id, kind, ref, url=url))
 
 
+async def prometheus_close_issue(issue_id: str, resolution: str = None, comment: str = None) -> str:
+    return await _wrap(_client_or_raise().close_issue(issue_id, resolution=resolution, comment=comment))
+
+
+async def prometheus_get_context_block(issue_id: str) -> str:
+    return await _wrap(_client_or_raise().get_context_block(issue_id))
+
+
+async def prometheus_query_graph(root_id: str, depth: float = None, direction: str = None) -> str:
+    return await _wrap(_client_or_raise().query_graph(
+        root_id, depth=int(depth) if depth is not None else None, direction=direction,
+    ))
+
+
+async def prometheus_my_proposals(status: str = None) -> str:
+    return await _wrap(_client_or_raise().my_proposals(status=status))
+
+
 if _client is not None:
     log.info("Prometheus connected — registering prometheus_* tools")
     registry.register(Tool(
@@ -253,4 +271,35 @@ if _client is not None:
             "verdict": {"type": "string", "enum": ["pass", "fail"]}, "detail": {"type": "string", "default": None},
         },
         handler=prometheus_report_gate_check,
+    ))
+    registry.register(Tool(
+        name="prometheus_close_issue",
+        description="Close a Prometheus issue (done or canceled) — goes through the same gates as any transition",
+        parameters={
+            "issue_id": {"type": "string"},
+            "resolution": {"type": "string", "enum": ["done", "canceled"], "default": None},
+            "comment": {"type": "string", "default": None},
+        },
+        handler=prometheus_close_issue,
+    ))
+    registry.register(Tool(
+        name="prometheus_get_context_block",
+        description="A Prometheus issue's context blocks (system prompt / instructions / constraints) to follow while working it",
+        parameters={"issue_id": {"type": "string"}},
+        handler=prometheus_get_context_block,
+    ))
+    registry.register(Tool(
+        name="prometheus_query_graph",
+        description="Walk the Prometheus blocks graph from an issue: down (what it blocks), up (its blockers) or both",
+        parameters={
+            "root_id": {"type": "string"}, "depth": {"type": "number", "default": None},
+            "direction": {"type": "string", "enum": ["up", "down", "both"], "default": None},
+        },
+        handler=prometheus_query_graph,
+    ))
+    registry.register(Tool(
+        name="prometheus_my_proposals",
+        description="This connection's Prometheus proposals (gated transitions, held writes) and their outcome, with reviewers' reasons",
+        parameters={"status": {"type": "string", "enum": ["pending", "accepted", "rejected"], "default": None}},
+        handler=prometheus_my_proposals,
     ))

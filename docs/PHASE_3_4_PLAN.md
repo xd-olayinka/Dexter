@@ -124,9 +124,8 @@ new `GateManager.list_resolved_since()` — see the file for why gate history is
 `mcp` would shadow the real `mcp` PyPI package (the official MCP Python SDK) for anything imported
 after it. Tools are registered in `server/tools/prometheus_tools.py` as planned, gated on both
 `DEXTER_PROMETHEUS_MCP_URL` and `_TOKEN` being set; `/api/status`'s new `prometheus` block and a
-Settings ConnRow show connection state. **Not verified against a live Prometheus deployment** — no
-`DEXTER_PROMETHEUS_MCP_URL` is configured anywhere in this environment; the wire format matches
-Prometheus's `mcp/router.ts` as read from source, not as round-tripped.
+Settings ConnRow show connection state. Verified live against production Prometheus on 2026-09-25
+(see the end of this section).
 
 Exactly `docs/PROMETHEUS_MCP_SPEC.md`'s §3/§4, split by repo:
 
@@ -243,7 +242,7 @@ The audit of PRD vs. code found these gaps that need no third-party account. All
   Shadow Piper voices when voice is installed (script-only otherwise). Settings → Archive.
 - **Hosting readiness:** `server/Dockerfile` + `docker-compose.yml` (API + pgvector Postgres). Where
   to host is still a decision, not code.
-- **Prometheus bridge:** Dexter now registers 19 `prometheus_*` tools — the 16 originals plus
+- **Prometheus bridge:** Dexter registered 19 `prometheus_*` tools here (23 since 2026-10-12, see §10) — the 16 originals plus
   `prometheus_read_resource` (MCP resources) and `prometheus_my_gate_checks` /
   `prometheus_report_gate_check`, so Anthony can vote on Prometheus `agent_check`/`consensus` gates.
 
@@ -291,6 +290,19 @@ All closed (`server/ops.py` unless noted; tests in `server/tests/test_ops.py`):
 - **Voice on Railway** — faster-whisper (no torch) is in the image; push-to-talk ends the turn on
   release, and without a VAD a chunk no longer ends it (that transcribed every fragment separately).
 
+## 10 · Bridge parity and polling — shipped 2026-10-12
+
+- **Four more Prometheus tools.** Prometheus's line-by-line pass added `close_issue`,
+  `get_context_block`, `query_graph` and `my_proposals`; Dexter now registers all four (23
+  `prometheus_*` tools). Chat runs the three reads on its own; `close_issue` is a `propose_action`
+  kind the Commander confirms, like every other write.
+- **Gate-vote polling backs off.** Every `my_gate_checks` call is a row in Prometheus's MCP call log;
+  at a fixed 2 minutes Anthony wrote ~720 a day, which helped push that log past Convex's 8,192-item
+  return limit and blank Prometheus for owners (2026-10-12). The sweep now polls at
+  `DEXTER_GATE_VOTE_INTERVAL` while a check is open and doubles the wait up to
+  `DEXTER_GATE_VOTE_MAX_INTERVAL` (900 s) while none is, with ±10% jitter. Prometheus now keeps 30
+  days of raw call rows plus permanent daily totals.
+
 ## What's intentionally not done this pass
 
 - **Slack/Gmail/GitHub/Stripe integrations (Phase 3 proper).** Each needs an OAuth app registered
@@ -300,6 +312,7 @@ All closed (`server/ops.py` unless noted; tests in `server/tests/test_ops.py`):
   nothing would be scaffolding for its own sake.
 - **The Archive vault** (Phase 6) — v1 shipped (§8), own screen and hybrid retrieval (§9). Not
   yet: per-notebook chat history.
-- **Deploying the Dexter backend anywhere but the Commander's own machine.** The frontend deploys
-  to GitHub Pages; the backend is now containerized (`server/Dockerfile`, `docker-compose.yml`) but
-  has not been deployed to a host. That needs a hosting decision and an account.
+- **Hosting is chosen (Railway), the docs only record the image.** The root `Dockerfile` builds a
+  combined app + API image for Railway (2026-09-27/28); the service URL and Railway account live
+  outside this repo. The frontend also deploys to GitHub Pages, where it needs the backend URL set in
+  Settings and otherwise runs in demo mode.

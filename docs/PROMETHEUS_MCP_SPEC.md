@@ -19,7 +19,9 @@
 > - **Client module** lives at `server/integrations/prometheus_mcp.py` (not `server/mcp/prometheus.py`).
 > - **All 16 tools** in §2.1–2.2 exist on both sides, plus two added 2026-09-25 for automated gates:
 >   `my_gate_checks` / `report_gate_check` (Anthony votes on Prometheus `agent_check`/`consensus`).
->   Dexter registers 19 `prometheus_*` tools when `DEXTER_PROMETHEUS_MCP_URL`/`_TOKEN` are set.
+>   Four more were added 2026-09-26 (`close_issue`, `get_context_block`, `query_graph`, `my_proposals`),
+>   22 in all. Dexter registers 23 `prometheus_*` tools (those 22 plus `prometheus_read_resource`)
+>   when `DEXTER_PROMETHEUS_MCP_URL`/`_TOKEN` are set.
 > - **§2.3 MCP resources are built** (Prometheus `mcp/resources.ts`): `workspace/context.md`,
 >   `issue/{identifier}.md`, `project/{id}/brief.md`, `team/{key}/board.md` via `resources/read`;
 >   Dexter reads them with `prometheus_read_resource`.

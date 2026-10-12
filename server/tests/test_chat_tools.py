@@ -18,7 +18,8 @@ def test_chat_registry_has_reads_and_propose_but_no_writes_or_files():
     names = set(reg.list_tools())
     assert "propose_action" in names and "web_search" in names
     for forbidden in ("read_file", "write_file", "list_directory", "prometheus_create_issue",
-                      "prometheus_comment_issue", "prometheus_transition_issue", "prometheus_report_gate_check"):
+                      "prometheus_comment_issue", "prometheus_transition_issue", "prometheus_report_gate_check",
+                      "prometheus_close_issue"):
         assert forbidden not in names
 
 
@@ -28,6 +29,8 @@ def test_chat_registry_has_reads_and_propose_but_no_writes_or_files():
     ("comment_issue", {"issue_id": "i1", "body": "hi"}, True),
     ("update_issue", {"issue_id": "i1"}, False),
     ("update_issue", {"issue_id": "i1", "progress_note": "half done"}, True),
+    ("close_issue", {"issue_id": "i1", "resolution": "done"}, True),
+    ("close_issue", {"resolution": "done"}, False),
     ("delete_everything", {}, False),
 ])
 def test_validate_action(kind, args, ok):
@@ -167,3 +170,26 @@ async def test_streamed_turn_without_tools_is_one_round():
 
     reply, _ = await chat_tools.run_turn_stream(StreamBrain((["Hel", "lo"], None)), [{"role": "user", "content": "hi"}], None, on_chunk)
     assert reply == "Hello" and chunks == ["Hel", "lo"]
+
+
+@pytest.mark.asyncio
+async def test_newer_prometheus_tools_send_the_router_arguments(monkeypatch):
+    from integrations.prometheus_mcp import PrometheusMCP
+
+    sent = []
+
+    async def fake_call(self, tool, args):
+        sent.append((tool, {k: v for k, v in args.items() if v is not None}))
+        return {}
+    monkeypatch.setattr(PrometheusMCP, "_call", fake_call)
+    c = PrometheusMCP("http://x", "t")
+    await c.close_issue("ENG-1", resolution="canceled", comment="dup")
+    await c.get_context_block("ENG-1")
+    await c.query_graph("ENG-1", depth=2, direction="up")
+    await c.my_proposals()
+    assert sent == [
+        ("close_issue", {"issueId": "ENG-1", "resolution": "canceled", "comment": "dup"}),
+        ("get_context_block", {"issueId": "ENG-1"}),
+        ("query_graph", {"rootId": "ENG-1", "depth": 2, "direction": "up"}),
+        ("my_proposals", {}),
+    ]

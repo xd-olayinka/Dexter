@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     signup_mode: str = "open"
     # Seconds between Anthony's sweeps for Prometheus gate checks addressed to it (gate_voter.py); 0 = off.
     gate_vote_interval: int = 120
+    # While no gate work is open the sweep backs off exponentially from the interval up to this (seconds).
+    gate_vote_max_interval: int = 900
     # Directory holding the built frontend (the combined Railway image); empty = API only.
     static_dir: str = ""
 

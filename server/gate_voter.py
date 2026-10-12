@@ -3,7 +3,8 @@
 Prometheus gates of type `agent_check`/`consensus` wait for votes from their assigned agents. Before
 this, Anthony only voted when a task explicitly asked it to, so those gates sat. Now a background
 loop asks Prometheus for checks addressed to this agent (`my_gate_checks`) every
-DEXTER_GATE_VOTE_INTERVAL seconds, reads the issue, has the brain judge it against the gate's
+DEXTER_GATE_VOTE_INTERVAL seconds while there is gate work, backing off exponentially (up to
+DEXTER_GATE_VOTE_MAX_INTERVAL) while there is none, since every poll is a logged MCP call. It reads the issue, has the brain judge it against the gate's
 instructions, and reports pass/fail with its reasoning (`report_gate_check`).
 
 It never guesses: an unparseable judgement, a missing issue, or a spent monthly budget means no vote
@@ -14,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 from collections import deque
 from datetime import datetime, timezone
@@ -26,6 +28,8 @@ log = logging.getLogger("dexter.gate_voter")
 # only after the proposal changes (Prometheus drops it from my_gate_checks once settled).
 _done: set[tuple[str, str]] = set()
 recent: deque[dict] = deque(maxlen=50)  # shown in the run log
+# Checks the last sweep saw still waiting on this agent (voted or not); drives the poll backoff.
+last_open_checks = 0
 
 VOTE_PROMPT = """You are ANTHONY, an automated reviewer voting on a Prometheus approval gate.
 
@@ -78,6 +82,8 @@ async def vote_once(app) -> int:
     import ledger
     from tools.prometheus_tools import get_client
 
+    global last_open_checks
+    last_open_checks = 0
     client = get_client()
     brain = getattr(app.state, "brain", None)
     if client is None or brain is None or not (await brain.describe())["ready"]:
@@ -87,6 +93,7 @@ async def vote_once(app) -> int:
     except Exception as e:
         log.info("my_gate_checks failed: %s", e)
         return 0
+    last_open_checks = sum(1 for c in checks if not c.get("yourVote"))
 
     business_id = await _billing_business()
     cast = 0
@@ -134,16 +141,26 @@ async def vote_once(app) -> int:
     return cast
 
 
+def next_delay(current: float, base: float, cap: float, active: bool) -> float:
+    """Poll again at `base` while gate work is open; otherwise double the wait, up to `cap`."""
+    return base if active else min(current * 2, max(cap, base))
+
+
 async def run_forever(app) -> None:
-    interval = settings.gate_vote_interval
-    if interval <= 0:
+    base = settings.gate_vote_interval
+    if base <= 0:
         return
+    cap = settings.gate_vote_max_interval
+    delay = float(base)
     await asyncio.sleep(10)  # let startup settle
     while True:
+        cast = 0
         try:
-            await vote_once(app)
+            cast = await vote_once(app)
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("gate voter sweep failed")
-        await asyncio.sleep(interval)
+        delay = next_delay(delay, base, cap, active=cast > 0 or last_open_checks > 0)
+        # ±10% jitter so several Dexter instances don't poll in lockstep
+        await asyncio.sleep(delay * random.uniform(0.9, 1.1))

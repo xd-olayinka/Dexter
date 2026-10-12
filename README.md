@@ -12,6 +12,14 @@ One app, two operatives, two faces. Toggle between them any time.
 
 ## Status
 
+**2026-10-12 · bridge + polling.** Dexter registers all 23 `prometheus_*` tools (the four newest:
+`close_issue`, `get_context_block`, `query_graph`, `my_proposals`; chat can read the last three and
+propose a close). Anthony's gate-vote poll backs off exponentially (2 min → 15 min,
+`DEXTER_GATE_VOTE_MAX_INTERVAL`) while no gate work is open; every poll is a logged call in
+Prometheus. Hosting: the root `Dockerfile` is a combined app + API image built for Railway
+(`signup_mode`, `/api/health`, browser, voice and SearXNG in the image); `server/Dockerfile` stays the
+API-only image for `docker compose`. 132 backend tests.
+
 **2026-09-26 · line-by-line pass.** See `docs/PHASE_3_4_PLAN.md` §9. The Run Log, chat quick actions
 and team load are live instead of demo copy; **Hold**, **spawn templates**, **mission priority** and
 **standing preferences** ("remember…", "always…") exist end to end; budget is per business; Team shows
@@ -38,7 +46,7 @@ wired and verified live** against a real production Prometheus workspace (`DEXTE
 `_TOKEN`). The Dependency map (business → team → agent → tool, PRD §4) shows real, observed
 relationships — never a fabricated edge. With auth on, every data and control route (including
 Anthony's kill/approve/guard endpoints) needs a session, and claiming an invite needs its one-time
-code. 67 backend tests passing (`server/tests/`). Everything
+code. Backend tests live in `server/tests/` (132 as of 2026-10-12). Everything
 still degrades to Demo mode when the backend isn't running, so the Pages deploy stays alive.
 
 See [`docs/setup.html`](docs/setup.html) for the step-by-step install checklist — Ollama, Postgres + pgvector, SearXNG, voice pipeline, ntfy phone push, optional cloud API keys.

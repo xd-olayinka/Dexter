@@ -23,7 +23,8 @@ log = logging.getLogger("dexter.chat_tools")
 READ_TOOLS = (
     "prometheus_list_issues", "prometheus_get_issue", "prometheus_my_queue", "prometheus_list_dependencies",
     "prometheus_list_projects", "prometheus_get_project", "prometheus_list_teams", "prometheus_get_workload",
-    "prometheus_read_resource", "web_search", "browse_url", "current_datetime", "time_until",
+    "prometheus_read_resource", "prometheus_get_context_block", "prometheus_query_graph", "prometheus_my_proposals",
+    "web_search", "browse_url", "current_datetime", "time_until",
 )
 
 # Changes the Commander can confirm from chat, and the arguments each needs.
@@ -34,13 +35,14 @@ ACTIONS: dict[str, tuple[str, ...]] = {
     "update_issue": ("issue_id",),
     "link_issues": ("source_id", "target_id", "type"),
     "pick_issue": ("issue_id",),
+    "close_issue": ("issue_id",),
 }
 
 TOOL_GUIDE = (
     "\n\nYou can look things up with your tools: Prometheus (the team's projects, issues, workload, "
     "dependencies), web search, a browser and the clock. Use them instead of guessing whenever the "
     "Commander asks about their work or anything current. To CHANGE anything in Prometheus (create, "
-    "comment, move, update, link, pick up an issue), call propose_action — the Commander confirms it; "
+    "comment, move, update, link, pick up or close an issue), call propose_action — the Commander confirms it; "
     "never say a change is done until they have. The chat shows plain text: answer in short "
     "sentences and simple dash lists, no tables or Markdown headings."
 )
@@ -210,6 +212,8 @@ async def perform(p: dict) -> str:
         r = await client.link_issues(a["source_id"], a["target_id"], a["type"])
     elif kind == "pick_issue":
         r = await client.pick_issue(a["issue_id"])
+    elif kind == "close_issue":
+        r = await client.close_issue(a["issue_id"], resolution=a.get("resolution"), comment=a.get("comment"))
     else:
         raise ValueError(kind)
     return json.dumps(r, default=str)[:2000]

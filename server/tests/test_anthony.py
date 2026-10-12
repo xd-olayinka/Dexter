@@ -115,6 +115,27 @@ async def test_no_bridge_or_no_brain_is_a_no_op(monkeypatch):
     assert await gate_voter.vote_once(_app(FakeBrain("{}"))) == 0
 
 
+
+def test_poll_backs_off_while_idle_and_snaps_back_on_work():
+    d = 120.0
+    for expected in (240, 480, 900, 900):
+        d = gate_voter.next_delay(d, 120, 900, active=False)
+        assert d == expected
+    assert gate_voter.next_delay(d, 120, 900, active=True) == 120
+
+
+@pytest.mark.asyncio
+async def test_sweep_reports_open_checks_for_backoff(monkeypatch):
+    import tools.prometheus_tools as pt
+    monkeypatch.setattr(pt, "get_client", lambda: FakeClient([]))
+    await gate_voter.vote_once(_app(FakeBrain("{}")))
+    assert gate_voter.last_open_checks == 0
+
+    client = FakeClient([_check(), _check(gid="gate_2", vote="pass")])
+    monkeypatch.setattr(pt, "get_client", lambda: client)
+    await gate_voter.vote_once(_app(FakeBrain("unclear")))  # no vote cast, but gate_1 is still open
+    assert gate_voter.last_open_checks == 1
+
 # ---------------------------------------------------------------- checkpoints
 
 @pytest.mark.asyncio
